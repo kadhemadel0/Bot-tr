@@ -12,7 +12,6 @@ from deep_translator.exceptions import TranslationNotFound
 from gtts import gTTS
 from spellchecker import SpellChecker
 import eng_to_ipa as ipa
-import requests
 import re
 import os
 from flask import Flask
@@ -40,23 +39,17 @@ spell = SpellChecker(language="en")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = """
-👋 Hello!
-
-Welcome to the Translation Bot.
+Welcome to the Translation Bot
 
 Features:
+- English ↔ Arabic Translation
+- IPA (Phonetic Transcription)
+- Voice Pronunciation
+- Spelling Correction
 
-✅ English ↔ Arabic Translation
-✅ IPA (Phonetic Transcription)
-✅ Voice Pronunciation
-✅ Spelling Correction
-✅ Examples
-✅ Synonyms
-
-Developer:
-@Xkadhem
+Dev: @Xkadhem
 """
-    await update.message.reply_text(text)
+    await update.message.reply_text(text.strip())
 
 
 def contains_arabic(text):
@@ -69,6 +62,10 @@ def correct_spelling(sentence):
     changed = False
 
     for word in words:
+        # إذا الكلمة تبدأ بحرف كبير (مثل الأسماء Ali, Ahmed)، نتخلى عنها وما نغيرها أبداً
+        if word[0].isupper():
+            continue
+            
         new = spell.correction(word)
         if new and new.lower() != word.lower():
             corrected = corrected.replace(word, new, 1)
@@ -98,9 +95,13 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     target="ar"
                 ).translate(text)
             except TranslationNotFound:
-                translated = "عذراً، لم أتمكن من العثور على ترجمة لهذا النص."
+                translated = "not found"
             except Exception:
-                translated = text
+                translated = "not found"
+
+            # إذا الترجمة طلعت فارغة أو متشابهة بطريقة غريبة
+            if not translated or translated.strip() == "":
+                translated = "not found"
 
             voice_text = text
             
@@ -111,9 +112,14 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 ipa_text = "IPA not found"
 
-            response = f"""🇬🇧 English
-{text} > {translated}
-ipa /{ipa_text}/
+            response = f"""🌐 الترجمة:
+{translated}
+
+🔤 الرسم الصوتي (IPA):
+/{ipa_text}/
+
+🗣️ النطق الأصلي:
+{text}
 """
         else:
             try:
@@ -122,72 +128,46 @@ ipa /{ipa_text}/
                     target="en"
                 ).translate(text)
             except TranslationNotFound:
-                translated = "Sorry, translation not found."
+                translated = "not found"
             except Exception:
-                translated = text
+                translated = "not found"
+
+            # التحقق إذا الكلمة العربية خطأ أو مو مفهومة
+            if not translated or translated.strip() == "" or translated.lower() == text.lower():
+                translated = "not found"
 
             voice_text = translated
             
             try:
                 ipa_text = ipa.convert(translated)
-                if ipa_text.strip() == "" or "?" in ipa_text:
+                if ipa_text.strip() == "" or "?" in ipa_text or translated == "not found":
                     ipa_text = "IPA not found"
             except Exception:
                 ipa_text = "IPA not found"
 
-            response = f"""🇮🇶 Arabic
-
-{text}
-
-🇬🇧 English
-
+            response = f"""🌐 الترجمة الإنجليزية:
 {translated}
 
-🔤 IPA
+🔤 الرسم الصوتي (IPA):
+/{ipa_text}/
 
-{ipa_text}
+📌 النص الأصلي بالعربي:
+{text}
 """
-
-        example_text = ""
-        synonym_text = ""
-
-        if not is_arabic:
-            try:
-                r = requests.get(
-                    f"https://api.dictionaryapi.dev/api/v2/entries/en/{text.split()[0]}",
-                    timeout=10
-                )
-
-                if r.status_code == 200:
-                    data = r.json()[0]
-                    meanings = data.get("meanings", [])
-
-                    if meanings:
-                        definitions = meanings[0].get("definitions", [])
-                        if definitions:
-                            ex = definitions[0].get("example")
-                            if ex:
-                                example_text = f"\n📖 Example:\n{ex}"
-
-                        syn = meanings[0].get("synonyms", [])
-                        if syn:
-                            synonym_text = f"\n🔁 Synonyms:\n{', '.join(syn[:5])}"
-
-            except Exception:
-                pass
-
-        response += example_text
-        response += synonym_text
 
         filename = "voice.mp3"
 
-        try:
-            gTTS(
-                text=voice_text,
-                lang="en",
-                slow=False
-            ).save(filename)
-        except Exception:
+        # لا تولد صوت إذا الكلمة غير موجودة أو خطأ
+        if voice_text and voice_text != "not found":
+            try:
+                gTTS(
+                    text=voice_text,
+                    lang="en",
+                    slow=False
+                ).save(filename)
+            except Exception:
+                filename = None
+        else:
             filename = None
 
         await update.message.reply_text(response)
@@ -198,9 +178,8 @@ ipa /{ipa_text}/
             os.remove(filename)
 
     except Exception as e:
-        # حماية شاملة تمنع توقف البوت لأي سبب غير متوقع
         print(f"Error occurred: {e}")
-        await update.message.reply_text("عذراً، حدث خطأ أثناء معالجة طلبك. يرجى المحاولة مرة أخرى.")
+        await update.message.reply_text("not found")
 
 
 def main():
@@ -225,5 +204,5 @@ def main():
 
 
 if __name__ == "__main__":
-    keep_alive()  # يشغل سيرفر الويب بالخلفية لفتح البورت
-    main()        # يشغل بوت التيليجرام الأساسي
+    keep_alive()
+    main()
