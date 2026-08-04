@@ -1,0 +1,6 @@
+python-telegram-bot
+deep-translator
+gTTS
+pyspellchecker
+eng-to-ipa
+requests
