@@ -112,14 +112,10 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 ipa_text = "IPA not found"
 
-            response = f"""🌐 الترجمة:
-{translated}
+            response = f""" الترجمة:{translated}
+(IPA):/{ipa_text}/
 
-🔤 الرسم الصوتي (IPA):
-/{ipa_text}/
-
-🗣️ النطق الأصلي:
-{text}
+النطق الأصلي:{text}
 """
         else:
             try:
@@ -145,14 +141,12 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 ipa_text = "IPA not found"
 
-            response = f"""🌐 الترجمة الإنجليزية:
-{translated}
+            response = f"""
+            الترجمه : {translated}
 
-🔤 الرسم الصوتي (IPA):
-/{ipa_text}/
+(IPA): /{ipa_text}/
+النص الأصلي :{text}
 
-📌 النص الأصلي بالعربي:
-{text}
 """
 
         filename = "voice.mp3"
