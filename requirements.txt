@@ -1,9 +1,10 @@
 python-telegram-bot
 deep-translator
-gtts
+gTTS
 pyspellchecker
 eng-to-ipa
-requests
 flask
+requests
+
 
 
