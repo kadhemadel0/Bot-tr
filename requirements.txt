@@ -1,6 +1,6 @@
-python-telegram-bot
-deep-translator
+pytelegrambotapi
 gTTS
 pyspellchecker
-eng-to-ipa
-requests
+flask
+deep-translator
+
