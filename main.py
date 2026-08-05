@@ -111,8 +111,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Welcome to the Translation Bot
 
 Features:
-- EN ➔ AR: Translation + IPA (EN & AR Phonetic)
-- AR ➔ EN: Translation + Voice Pronunciation
+- EN ➔ AR: Translation + IPA (EN & AR Phonetic) + Voice
+- AR ➔ EN: Translation + Voice
 
 Dev: @Xkadhem
 """
@@ -180,7 +180,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if not is_arabic:
-            # إنجليزي إلى عربي (بدون فويس، عرض الترجمة والـ IPA الإنجليزي والعربي قريبة من بعضها)
+            # إنجليزي إلى عربي (ترجمة، IPA إنجليزي، لفظ عربي، والفويس الصوتي وياها)
             corrected, changed = correct_spelling(text)
             text = corrected
             
@@ -204,8 +204,10 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = f"الترجمة: {translated}\nIPA: /{ipa_en}/\nاللفظ العربي: {arabic_phonetic}"
             await update.message.reply_text(response)
 
+            voice_text = text
+
         else:
-            # عربي إلى إنجليزي (ترجمة + فويس فقط بدون أي نصوص إضافية)
+            # عربي إلى إنجليزي (ترجمة إنجليزية + فويس فقط)
             try:
                 translated = GoogleTranslator(source="ar", target="en").translate(text)
             except:
@@ -215,19 +217,20 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 translated = "not found"
 
             await update.message.reply_text(translated)
+            voice_text = translated if translated != "not found" else None
 
-            # إرسال الفويس الصوتي للكلمة الإنجليزية المترجمة
-            filename = "voice.mp3"
-            if translated and translated != "not found":
-                try:
-                    gTTS(text=translated, lang="en", slow=False).save(filename)
-                    if os.path.exists(filename):
-                        with open(filename, "rb") as audio:
-                            await update.message.reply_voice(audio)
-                        os.remove(filename)
-                except:
-                    if os.path.exists(filename):
-                        os.remove(filename)
+        # إرسال الفويس الصوتي في الحالتين
+        filename = "voice.mp3"
+        if voice_text and voice_text != "not found":
+            try:
+                gTTS(text=voice_text, lang="en", slow=False).save(filename)
+                if os.path.exists(filename):
+                    with open(filename, "rb") as audio:
+                        await update.message.reply_voice(audio)
+                    os.remove(filename)
+            except:
+                if os.path.exists(filename):
+                    os.remove(filename)
 
     except Exception as e:
         print(f"Error occurred: {e}")
