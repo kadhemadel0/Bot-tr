@@ -8,10 +8,8 @@ from telegram.ext import (
 )
 
 from deep_translator import GoogleTranslator
-from deep_translator.exceptions import TranslationNotFound
 from gtts import gTTS
 import eng_to_ipa as ipa
-import re
 import os
 import json
 from flask import Flask
@@ -56,49 +54,52 @@ def save_users(users_set):
 bot_users = load_users()
 
 
-# --- دالة تحويل رموز الـ IPA إلى لفظ بالحروف العربية مع تصحيح ذكي ---
+# --- دالة تحويل رموز الـ IPA إلى لفظ بالحروف العربية والتشكيل المطلوب ---
 def ipa_to_arabic_phonetic(word, ipa_text):
+    clean_word = word.lower().strip()
+    
+    # القاموس المخصص للكلمات لضمان ضبطها بالشكل التام والمرتب
     custom_corrections = {
-        "certificate": "سيرتفيكت",
-        "sunday": "ساندي",
-        "monday": "ماندي",
-        "fancy": "فانسي",
-        "deluxe": "ديلوكس",
-        "camping": "كامبينغ"
+        "certificate": "سَرْتِفِكَت",
+        "sunday": "سَانْدِي",
+        "monday": "مَانْدِي",
+        "fancy": "فَانْسِي",
+        "deluxe": "دِيلُوكْس",
+        "camping": "كَامْبِينْغ",
+        "distance": "دِيسْتَنْس"
     }
     
-    clean_word = word.lower().strip()
     if clean_word in custom_corrections:
         return custom_corrections[clean_word]
 
     if not ipa_text or ipa_text == "IPA not found":
         return "غير متوفر"
     
-    ipa_text = ipa_text.replace("ˈ", "").replace("ˌ", "").replace(".", "")
+    # تنظيف الرموز الصوتية
+    phonetic = ipa_text.strip('/')
+    phonetic = phonetic.replace("ˈ", "").replace("ˌ", "").replace(".", "")
     
-    mapping = {
-        'θ': 'ث', 'ð': 'ذ', 'ʃ': 'ش', 'ʒ': 'ج', 'ʧ': 'تش', 'ʤ': 'ج',
-        'ŋ': 'نك', 'æ': 'أ', 'ɑ': 'آ', 'ɔ': 'و', 'ɒ': 'و', 'ʊ': 'و',
-        'u': 'و', 'ɪ': 'ي', 'i': 'ي', 'e': 'ي', 'ə': 'ه', 'ɜ': 'ر',
-        'p': 'ب', 'b': 'ب', 't': 'ت', 'd': 'د', 'k': 'ك', 'g': 'ج',
-        'f': 'ف', 'v': 'ف', 's': 'س', 'z': 'ز', 'm': 'م', 'n': 'ن',
-        'h': 'ه', 'l': 'ل', 'r': 'ر', 'w': 'و', 'j': 'ي'
+    # خريطة التحويل الصوتي الدقيقة مع الحركات
+    ipa_mapping = {
+        'iː': 'ِي', 'uː': 'ُو', 'ɑː': 'َا', 'ɔː': 'و', 'ɜː': 'ر',
+        'eɪ': 'ِيْ', 'aɪ': 'َايْ', 'ɔɪ': 'ُويْ', 'aʊ': 'َاوْ', 'əʊ': 'ُو',
+        'ɪə': 'ِيَة', 'eə': 'ِيْر', 'ʊə': 'ُوَة',
+        'tʃ': 'تش', 'dʒ': 'ج', 'ŋ': 'نْغ',
+        'ɪ': 'ِ', 'i': 'ِ', 'æ': 'َ', 'ɒ': 'َ', 'ʊ': 'ُ',
+        'u': 'و', 'ʌ': 'َ', 'ə': 'َ', 'e': 'ي',
+        'p': 'ب', 'b': 'ب', 't': 'ت', 'd': 'د',
+        'k': 'ك', 'g': 'گ', 'f': 'ف', 'v': 'ڤ',
+        'θ': 'ث', 'ð': 'ذ', 's': 'س', 'z': 'ز',
+        'ʃ': 'ش', 'ʒ': 'ج', 'h': 'ه', 'm': 'م',
+        'n': 'ن', 'l': 'ل', 'r': 'ر', 'j': 'ي', 'w': 'و',
+        'ɡ': 'گ', 'ː': ''
     }
     
-    result = ""
-    i = 0
-    while i < len(ipa_text):
-        if i < len(ipa_text) - 1 and ipa_text[i:i+2] in ['ʧ', 'ʤ', 'ŋ']:
-            result += mapping[ipa_text[i:i+2]]
-            i += 2
-        elif ipa_text[i] in mapping:
-            result += mapping[ipa_text[i]]
-            i += 1
-        else:
-            result += ipa_text[i]
-            i += 1
-            
-    return result
+    sorted_keys = sorted(ipa_mapping.keys(), key=len, reverse=True)
+    for key in sorted_keys:
+        phonetic = phonetic.replace(key, ipa_mapping[key])
+        
+    return phonetic
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -119,7 +120,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"Error sending admin notification: {e}")
 
-    # إرسال يوزر البوت فقط عند الضغط على start
     await update.message.reply_text(BOT_USERNAME)
 
 
@@ -142,7 +142,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if not is_arabic:
-            # إدخال إنجليزي
             target_word = text
             try:
                 translated = GoogleTranslator(source="en", target="ar").translate(target_word)
@@ -163,7 +162,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             voice_text = target_word
 
         else:
-            # إدخال عربي (يترجم للإنجليزية ثم يستخرج IPA واللفظ والفويس تماماً مثل الإنجليزي)
             try:
                 translated = GoogleTranslator(source="ar", target="en").translate(text)
             except:
@@ -184,11 +182,9 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             arabic_phonetic = ipa_to_arabic_phonetic(target_word, ipa_en) if translated != "not found" else "غير متوفر"
             voice_text = target_word if translated != "not found" else None
 
-        # بناء الرد المرتب حسب طلبك
         response = f"الترجمة: {translated}\nIPA: /{ipa_en}/\nاللفظ العربي: {arabic_phonetic}"
         await update.message.reply_text(response)
 
-        # إرسال الفويس الصوتي
         filename = "voice.mp3"
         if voice_text and voice_text != "not found":
             try:
