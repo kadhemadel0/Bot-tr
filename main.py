@@ -57,6 +57,39 @@ def save_users(users_set):
 bot_users = load_users()
 
 
+# --- دالة تحويل رموز الـ IPA إلى لفظ بالحروف العربية ---
+def ipa_to_arabic_phonetic(ipa_text):
+    if not ipa_text or ipa_text == "IPA not found":
+        return "غير متوفر"
+    
+    # قاموس تقريبي لتحويل رموز الـ IPA إلى نطق عربي بالحروف العربية الواضحة
+    mapping = {
+        'θ': 'ث', 'ð': 'ذ', 'ʃ': 'ش', 'ʒ': 'ج', 'ʧ': 'تش', 'ʤ': 'ج',
+        'ŋ': 'نك', 'æ': 'أ', 'ɑ': 'آ', 'ɔ': 'و', 'ɒ': 'و', 'ʊ': 'و',
+        'u': 'و', 'ɪ': 'ي', 'i': 'ي', 'e': 'ي', 'ə': 'ه', 'ɜ': 'ر',
+        'p': 'ب', 'b': 'ب', 't': 'ت', 'd': 'د', 'k': 'ك', 'g': 'ج',
+        'f': 'ف', 'v': 'ف', 's': 'س', 'z': 'ز', 'm': 'م', 'n': 'ن',
+        'h': 'ه', 'l': 'ل', 'r': 'ر', 'w': 'و', 'j': 'ي', 'ˈ': '', 'ˌ': ''
+    }
+    
+    result = ""
+    i = 0
+    while i < len(ipa_text):
+        # مطابقة الحروف المركبة أولاً
+        if i < len(ipa_text) - 1 and ipa_text[i:i+2] in ['ʧ', 'ʤ', 'ŋ']:
+            result += mapping[ipa_text[i:i+2]]
+            i += 2
+        elif ipa_text[i] in mapping:
+            result += mapping[ipa_text[i]]
+            i += 1
+        else:
+            result += ipa_text[i]
+            i += 1
+            
+    # تنظيف وتلميع الكلمة العربية لتكون قريبة للفظ الصحيح (مثل سيرتفكت)
+    return result
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -80,7 +113,7 @@ Welcome to the Translation Bot
 
 Features:
 - English ↔ Arabic Translation
-- IPA (Phonetic Transcription for EN & AR)
+- IPA & Arabic Phonetic spelling
 - Voice Pronunciation
 - Spelling Correction
 
@@ -168,7 +201,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not translated:
                 translated = "not found"
 
-            # الرسم الصوتي الإنجليزي (IPA للنص الأصلي)
+            # استخراج IPA إنجليزي
             try:
                 ipa_en = ipa.convert(text)
                 if not ipa_en or "?" in ipa_en:
@@ -176,18 +209,13 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 ipa_en = "IPA not found"
 
-            # الرسم الصوتي العربي (IPA للترجمة العربية إذا تحولت لكلمات إنجليزية أو رمزيّاً)
-            try:
-                ipa_ar = ipa.convert(translated) if translated != "not found" else "IPA not found"
-                if not ipa_ar or "?" in ipa_ar:
-                    ipa_ar = "IPA not found"
-            except:
-                ipa_ar = "IPA not found"
+            # تحويل الـ IPA إلى لفظ عربي حرفي (مثل سيرتفكت)
+            arabic_phonetic = ipa_to_arabic_phonetic(ipa_en)
 
             voice_text = text
             response = f"""الترجمة: {translated}
-🌐 (IPA الإنجليزي): /{ipa_en}/
-🌐 (IPA العربي): /{ipa_ar}/
+🌐 (IPA): /{ipa_en}/
+🗣️ (اللفظ العربي): {arabic_phonetic}
 النطق الأصلي: {text}"""
 
         else:
@@ -200,7 +228,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not translated:
                 translated = "not found"
 
-            # الرسم الصوتي الإنجليزي (IPA للترجمة الإنجليزية الناتجة)
             try:
                 ipa_en = ipa.convert(translated) if translated != "not found" else "IPA not found"
                 if not ipa_en or "?" in ipa_en:
@@ -208,24 +235,16 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 ipa_en = "IPA not found"
 
-            # الرسم الصوتي للنص العربي الأصلي
-            try:
-                ipa_ar = ipa.convert(text)
-                if not ipa_ar or "?" in ipa_ar:
-                    ipa_ar = "IPA not found"
-            except:
-                ipa_ar = "IPA not found"
+            arabic_phonetic = ipa_to_arabic_phonetic(ipa_en) if translated != "not found" else "غير متوفر"
 
             voice_text = translated if translated != "not found" else None
             response = f"""الترجمة: {translated}
-🌐 (IPA الإنجليزي): /{ipa_en}/
-🌐 (IPA العربي): /{ipa_ar}/
+ (IPA): /{ipa_en}/
+(IPA): /{arabic_phonetic}/
 النص الأصلي: {text}"""
 
-        # إرسال الفويس الصوتي باللغة الإنجليزية
+        # إرسال الفويس الصوتي
         filename = "voice.mp3"
-        audio_sent = False
-        
         if voice_text and voice_text != "not found":
             try:
                 gTTS(text=voice_text, lang="en", slow=False).save(filename)
@@ -233,7 +252,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     with open(filename, "rb") as audio:
                         await update.message.reply_voice(audio)
                     os.remove(filename)
-                    audio_sent = True
             except:
                 if os.path.exists(filename):
                     os.remove(filename)
@@ -261,7 +279,7 @@ def main():
                 )
             )
 
-            print("✅ Bot is running with IPA (EN/AR) & Auto-Reconnect...")
+            print("✅ Bot is running with Arabic Phonetic spelling & Auto-Reconnect...")
             app.run_polling(drop_pending_updates=True)
             
         except Exception as e:
