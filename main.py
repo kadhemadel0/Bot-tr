@@ -14,10 +14,9 @@ from spellchecker import SpellChecker
 import eng_to_ipa as ipa
 import re
 import os
+import json
 from flask import Flask
 import threading
-from PIL import Image
-import pytesseract
 
 # --- إعدادات سيرفر الـ Flask لإبقاء البوت شغال على Render ---
 app_flask = Flask('')
@@ -36,10 +35,47 @@ def keep_alive():
 
 TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 
+# ⚠️ ضع الأيدي الخاص بحسابك التليجرام هنا حصراً حتى تعمل صلاحيات المالك
+ADMIN_ID = 123456789  # <--- استبدل الرقم بأيدي حسابك الحقيقي
+
+USERS_FILE = "users.json"
 spell = SpellChecker(language="en")
 
 
+# --- دوال حفظ وإدارة المستخدمين ---
+def load_users():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r") as f:
+                return set(json.load(f))
+        except:
+            return set()
+    return set()
+
+def save_users(users_set):
+    with open(USERS_FILE, "w") as f:
+        json.dump(list(users_set), f)
+
+bot_users = load_users()
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_id = user.id
+    
+    # تسجيل المستخدم الجديد وإرسال تنبيه للمالك
+    if user_id not in bot_users:
+        bot_users.add(user_id)
+        save_users(bot_users)
+        
+        username_str = f"@{user.username}" if user.username else "لا يوجد يوزر"
+        admin_notification = f"🚨 شخص جديد دخل للبوت!\n\n👤 الاسم: {user.full_name}\n🔗 اليوزر: {username_str}\n🆔 الأيدي: `{user_id}`\n📊 العدد الكلي: {len(bot_users)}"
+        
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_notification, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Error sending admin notification: {e}")
+
     text = """
 Welcome to the Translation Bot
 
@@ -47,12 +83,41 @@ Features:
 - English ↔ Arabic Translation
 - IPA (Phonetic Transcription)
 - Voice Pronunciation (English only)
-- Image Text Translation (OCR)
 - Spelling Correction
 
 Dev: @Xkadhem
 """
     await update.message.reply_text(text.strip())
+
+
+# --- أمر معرفة عدد المستخدمين (للمالك فقط) ---
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text(f"📊 عدد المستخدمين الحاليين للبوت: {len(bot_users)} شخص.")
+
+
+# --- أمر إرسال رسالة جماعية لكل الأعضاء (للمالك فقط) ---
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+        
+    message_text = " ".join(context.args)
+    if not message_text:
+        await update.message.reply_text("⚠️ استعمل الأمر هكذا:\n`/broadcast رسالتك هنا`", parse_mode="Markdown")
+        return
+
+    success_count = 0
+    fail_count = 0
+
+    for uid in bot_users:
+        try:
+            await context.bot.send_message(chat_id=uid, text=message_text)
+            success_count += 1
+        except Exception:
+            fail_count += 1
+
+    await update.message.reply_text(f"✅ تم إرسال الإذاعة بنجاح!\n- وصلت إلى: {success_count}\n- فشلت عند: {fail_count}")
 
 
 def contains_arabic(text):
@@ -76,20 +141,15 @@ def correct_spelling(sentence):
     return corrected, changed
 
 
-# دالة موحدة لمعالجة النصوص (سواء أرسلها المستخدم كتابةً أو تم استخراجها من صورة)
-async def process_translation(update: Update, text: str, is_from_image: bool = False):
-    text = text.strip()
-    if not text:
-        await update.message.reply_text("not found")
-        return
-
+async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
     is_arabic = contains_arabic(text)
 
     try:
         if not is_arabic:
             corrected, changed = correct_spelling(text)
 
-            if corrected != text and not is_from_image:
+            if corrected != text:
                 await update.message.reply_text(
                     f"✍️ Did you mean?\n\n{corrected}"
                 )
@@ -109,6 +169,8 @@ async def process_translation(update: Update, text: str, is_from_image: bool = F
             if not translated or translated.strip() == "":
                 translated = "not found"
 
+            voice_text = text
+            
             try:
                 ipa_text = ipa.convert(text)
                 if ipa_text.strip() == "" or "?" in ipa_text:
@@ -121,24 +183,6 @@ async def process_translation(update: Update, text: str, is_from_image: bool = F
 
 النطق الأصلي:{text}
 """
-            # الكلمات الإنجليزية: توليد وإرسال ملف الصوت (Voice)
-            filename = "voice.mp3"
-            try:
-                gTTS(
-                    text=text,
-                    lang="en",
-                    slow=False
-                ).save(filename)
-            except Exception:
-                filename = None
-
-            await update.message.reply_text(response)
-
-            if filename and os.path.exists(filename):
-                with open(filename, "rb") as audio:
-                    await update.message.reply_voice(audio)
-                os.remove(filename)
-
         else:
             try:
                 translated = GoogleTranslator(
@@ -152,6 +196,8 @@ async def process_translation(update: Update, text: str, is_from_image: bool = F
 
             if not translated or translated.strip() == "" or translated.lower() == text.lower():
                 translated = "not found"
+
+            voice_text = None  # الكلمات العربية بدون صوت نهائياً
             
             try:
                 ipa_text = ipa.convert(translated)
@@ -161,81 +207,54 @@ async def process_translation(update: Update, text: str, is_from_image: bool = F
                 ipa_text = "IPA not found"
 
             response = f"""
-الترجمه : {translated}
+            الترجمه : {translated}
 
 (IPA): /{ipa_text}/
 النص الأصلي :{text}
+
 """
-            # الكلمات العربية: إرسال النص والترجمة والـ IPA فقط (بدون فويس نهائياً)
-            await update.message.reply_text(response)
+
+        filename = "voice.mp3"
+
+        if voice_text and voice_text != "not found":
+            try:
+                gTTS(
+                    text=voice_text,
+                    lang="en",
+                    slow=False
+                ).save(filename)
+            except Exception:
+                filename = None
+        else:
+            filename = None
+
+        await update.message.reply_text(response)
+
+        if filename and os.path.exists(filename):
+            with open(filename, "rb") as audio:
+                await update.message.reply_voice(audio)
+            os.remove(filename)
 
     except Exception as e:
         print(f"Error occurred: {e}")
         await update.message.reply_text("not found")
 
 
-# معالج النصوص العادية
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    await process_translation(update, text, is_from_image=False)
-
-
-# معالج الصور الجديد (OCR)
-async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        photo = update.message.photo[-1]
-        file = await context.bot.get_file(photo.file_id)
-        
-        image_path = "downloaded_image.jpg"
-        await file.download_to_drive(image_path)
-        
-        extracted_text = pytesseract.image_to_string(Image.open(image_path))
-        
-        if os.path.exists(image_path):
-            os.remove(image_path)
-            
-        cleaned_text = extracted_text.strip()
-        
-        if not cleaned_text:
-            await update.message.reply_text("❌ لم يتم العثور على نص واضح داخل الصورة.")
-            return
-            
-        await update.message.reply_text(f"📷 النص المستخرج من الصورة:\n`{cleaned_text}`", parse_mode="Markdown")
-        
-        # معالجة النص المستخرج مثل الكلمة الإنجليزية تماماً
-        await process_translation(update, cleaned_text, is_from_image=True)
-        
-    except Exception as e:
-        print(f"Image error: {e}")
-        await update.message.reply_text("حدث خطأ أثناء قراءة الصورة.")
-
-
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(
-        CommandHandler(
-            "start",
-            start
-        )
-    )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("broadcast", broadcast_command))
 
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            handle_text
+            handle
         )
     )
 
-    # معالج الصور الجديد
-    app.add_handler(
-        MessageHandler(
-            filters.PHOTO,
-            handle_image
-        )
-    )
-
-    print("✅ Bot is running...")
+    print("✅ Bot is running with Admin & User Tracking features...")
     app.run_polling()
 
 
