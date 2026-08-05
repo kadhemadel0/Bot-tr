@@ -7,12 +7,10 @@ from telegram.ext import (
     filters,
 )
 
-from deep_translator import GoogleTranslator
+from google import genai
 from gtts import gTTS
-import eng_to_ipa as ipa
 import os
 import json
-import re
 from flask import Flask
 import threading
 import time
@@ -37,6 +35,9 @@ ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
 BOT_USERNAME = "@Xkadhem"
 
+# إعداد عميل الذكاء الاصطناعي (تأكد أن مفتاح الـ API مخزن في متغيرات البيئة بـ Render باسم GEMINI_API_KEY)
+ai_client = genai.Client()
+
 
 # --- دوال حفظ وإدارة المستخدمين ---
 def load_users():
@@ -55,52 +56,39 @@ def save_users(users_set):
 bot_users = load_users()
 
 
-# --- دالة ترجمة آمنة مع نظام إعادة المحاولة التلقائي (Retry) لمنع التعليق ---
-def safe_translate(text, source_lang, target_lang):
-    for _ in range(3):  # يحاول 3 مرات في حال حدوث تعليق أو تايم أوت
+def contains_arabic(text):
+    return any('\u0600' <= c <= '\u06FF' for c in text)
+
+
+# --- دالة الذكاء الاصطناعي الاحترافية للترجمة والتحليل الصوتي الدقيق ---
+def get_linguistic_analysis(text):
+    prompt = f"""
+    Analyze the following text/word: "{text}"
+    Provide the response strictly in a JSON format with three keys:
+    1. "translation": If the input is in English, provide its accurate Arabic translation. If it is in Arabic, provide its accurate English translation.
+    2. "ipa": The precise International Phonetic Alphabet (IPA) representation for the English word/translation (enclosed in slashes or clean).
+    3. "phonetic_arabic": A high-quality, professional Arabic phonetic transcription (with correct Arabic diacritics/tashkeel) showing an Iraqi/standard Arabic speaker how to pronounce the English term natively and accurately, without any English letters remaining.
+    """
+    
+    for _ in range(3):  # نظام إعادة محاولة تلقائي لمنع أي تعليق
         try:
-            translated = GoogleTranslator(source=source_lang, target=target_lang).translate(text)
-            if translated:
-                return translated
+            response = ai_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config={
+                    'response_mime_type': 'application/json'
+                },
+            )
+            data = json.loads(response.text)
+            return {
+                "translation": data.get("translation", "not found"),
+                "ipa": data.get("ipa", "IPA not found"),
+                "phonetic_arabic": data.get("phonetic_arabic", "غير متوفر")
+            }
         except:
             time.sleep(0.5)
-    return "not found"
-
-
-# --- دالة تحويل رموز الـ IPA إلى لفظ عربي جذري وشامل لكل الكلمات ---
-def ipa_to_arabic_phonetic(word, ipa_text):
-    if not ipa_text or ipa_text == "IPA not found":
-        return "غير متوفر"
-    
-    # تنظيف الرموز الصوتية
-    phonetic = ipa_text.strip('/')
-    phonetic = phonetic.replace("ˈ", "").replace("ˌ", "").replace(".", "")
-    
-    # خريطة التحويل الشاملة لجميع الأصوات والحركات
-    ipa_mapping = {
-        'iː': 'ِي', 'uː': 'ُو', 'ɑː': 'َا', 'ɔː': 'و', 'ɜː': 'ر',
-        'eɪ': 'ِيْ', 'aɪ': 'َايْ', 'ɔɪ': 'ُويْ', 'aʊ': 'َاوْ', 'əʊ': 'ُو',
-        'ɪə': 'ِيَة', 'eə': 'ِيْر', 'ʊə': 'ُوَة',
-        'tʃ': 'تش', 'dʒ': 'ج', 'ŋ': 'نْغ',
-        'ɪ': 'ِ', 'i': 'ِ', 'æ': 'َ', 'ɒ': 'َ', 'ʊ': 'ُ',
-        'u': 'و', 'ʌ': 'َ', 'ə': 'َ', 'e': 'ي',
-        'ɑ': 'َا', 'a': 'َا',
-        'p': 'ب', 'b': 'ب', 't': 'ت', 'd': 'د',
-        'k': 'ك', 'g': 'گ', 'f': 'ف', 'v': 'ڤ',
-        'θ': 'ث', 'ð': 'ذ', 's': 'س', 'z': 'ز',
-        'ʃ': 'ش', 'ʒ': 'ج', 'h': 'ه', 'm': 'م',
-        'n': 'ن', 'l': 'ل', 'r': 'ر', 'j': 'ي', 'w': 'و',
-        'ɡ': 'گ', 'ː': ''
-    }
-    
-    sorted_keys = sorted(ipa_mapping.keys(), key=len, reverse=True)
-    for key in sorted_keys:
-        phonetic = phonetic.replace(key, ipa_mapping[key])
-        
-    # خطوة احترازية جذرية: إزالة أي حروف إنجليزية قد تبقى لضمان نظافة الناتج تماماً
-    phonetic = re.sub(r'[a-zA-Z]', '', phonetic)
-    
-    return phonetic.strip()
+            
+    return {"translation": "not found", "ipa": "IPA not found", "phonetic_arabic": "غير متوفر"}
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -130,10 +118,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📊 عدد المستخدمين الحاليين للبوت: {len(bot_users)} شخص.")
 
 
-def contains_arabic(text):
-    return any('\u0600' <= c <= '\u06FF' for c in text)
-
-
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -142,33 +126,18 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_arabic = contains_arabic(text)
 
     try:
+        # استدعاء التحليل اللغوي الذكي والشامل بجودة عالية جداً
+        analysis = get_linguistic_analysis(text)
+        
+        translated = analysis["translation"]
+        ipa_en = analysis["ipa"]
+        arabic_phonetic = analysis["phonetic_arabic"]
+
+        # تحديد الكلمة الإنجليزية المناسبة لقراءة الصوت (gTTS)
         if not is_arabic:
-            target_word = text
-            translated = safe_translate(target_word, "en", "ar")
-
-            try:
-                ipa_en = ipa.convert(target_word)
-                if not ipa_en or "?" in ipa_en:
-                    ipa_en = "IPA not found"
-            except:
-                ipa_en = "IPA not found"
-
-            arabic_phonetic = ipa_to_arabic_phonetic(target_word, ipa_en)
-            voice_text = target_word
-
+            voice_text = text
         else:
-            translated = safe_translate(text, "ar", "en")
-            target_word = translated if translated != "not found" else text
-
-            try:
-                ipa_en = ipa.convert(target_word) if translated != "not found" else "IPA not found"
-                if not ipa_en or "?" in ipa_en:
-                    ipa_en = "IPA not found"
-            except:
-                ipa_en = "IPA not found"
-
-            arabic_phonetic = ipa_to_arabic_phonetic(target_word, ipa_en) if translated != "not found" else "غير متوفر"
-            voice_text = target_word if translated != "not found" else None
+            voice_text = translated if translated != "not found" else None
 
         response = f"الترجمة: {translated}\nIPA: /{ipa_en}/\nاللفظ العربي: {arabic_phonetic}"
         await update.message.reply_text(response)
@@ -205,7 +174,7 @@ def main():
                 )
             )
 
-            print("✅ Bot is running smoothly...")
+            print("✅ Bot is running smoothly with AI core...")
             app.run_polling(drop_pending_updates=True)
             
         except Exception as e:
