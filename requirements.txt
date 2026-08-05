@@ -1,5 +1,5 @@
+
 python-telegram-bot
-deep-translator
+google-genai
 gTTS
-eng-to-ipa
 Flask
