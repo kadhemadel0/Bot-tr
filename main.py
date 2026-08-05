@@ -12,6 +12,7 @@ from gtts import gTTS
 import eng_to_ipa as ipa
 import os
 import json
+import re
 from flask import Flask
 import threading
 import time
@@ -54,24 +55,20 @@ def save_users(users_set):
 bot_users = load_users()
 
 
-# --- دالة تحويل رموز الـ IPA إلى لفظ بالحروف العربية والتشكيل المطلوب ---
-def ipa_to_arabic_phonetic(word, ipa_text):
-    clean_word = word.lower().strip()
-    
-    # القاموس المخصص للكلمات لضمان ضبطها بالشكل التام والمرتب
-    custom_corrections = {
-        "certificate": "سَرْتِفِكَت",
-        "sunday": "سَانْدِي",
-        "monday": "مَانْدِي",
-        "fancy": "فَانْسِي",
-        "deluxe": "دِيلُوكْس",
-        "camping": "كَامْبِينْغ",
-        "distance": "دِيسْتَنْس"
-    }
-    
-    if clean_word in custom_corrections:
-        return custom_corrections[clean_word]
+# --- دالة ترجمة آمنة مع نظام إعادة المحاولة التلقائي (Retry) لمنع التعليق ---
+def safe_translate(text, source_lang, target_lang):
+    for _ in range(3):  # يحاول 3 مرات في حال حدوث تعليق أو تايم أوت
+        try:
+            translated = GoogleTranslator(source=source_lang, target=target_lang).translate(text)
+            if translated:
+                return translated
+        except:
+            time.sleep(0.5)
+    return "not found"
 
+
+# --- دالة تحويل رموز الـ IPA إلى لفظ عربي جذري وشامل لكل الكلمات ---
+def ipa_to_arabic_phonetic(word, ipa_text):
     if not ipa_text or ipa_text == "IPA not found":
         return "غير متوفر"
     
@@ -79,7 +76,7 @@ def ipa_to_arabic_phonetic(word, ipa_text):
     phonetic = ipa_text.strip('/')
     phonetic = phonetic.replace("ˈ", "").replace("ˌ", "").replace(".", "")
     
-    # خريطة التحويل الصوتي الدقيقة مع الحركات
+    # خريطة التحويل الشاملة لجميع الأصوات والحركات
     ipa_mapping = {
         'iː': 'ِي', 'uː': 'ُو', 'ɑː': 'َا', 'ɔː': 'و', 'ɜː': 'ر',
         'eɪ': 'ِيْ', 'aɪ': 'َايْ', 'ɔɪ': 'ُويْ', 'aʊ': 'َاوْ', 'əʊ': 'ُو',
@@ -87,6 +84,7 @@ def ipa_to_arabic_phonetic(word, ipa_text):
         'tʃ': 'تش', 'dʒ': 'ج', 'ŋ': 'نْغ',
         'ɪ': 'ِ', 'i': 'ِ', 'æ': 'َ', 'ɒ': 'َ', 'ʊ': 'ُ',
         'u': 'و', 'ʌ': 'َ', 'ə': 'َ', 'e': 'ي',
+        'ɑ': 'َا', 'a': 'َا',
         'p': 'ب', 'b': 'ب', 't': 'ت', 'd': 'د',
         'k': 'ك', 'g': 'گ', 'f': 'ف', 'v': 'ڤ',
         'θ': 'ث', 'ð': 'ذ', 's': 'س', 'z': 'ز',
@@ -99,7 +97,10 @@ def ipa_to_arabic_phonetic(word, ipa_text):
     for key in sorted_keys:
         phonetic = phonetic.replace(key, ipa_mapping[key])
         
-    return phonetic
+    # خطوة احترازية جذرية: إزالة أي حروف إنجليزية قد تبقى لضمان نظافة الناتج تماماً
+    phonetic = re.sub(r'[a-zA-Z]', '', phonetic)
+    
+    return phonetic.strip()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -143,13 +144,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not is_arabic:
             target_word = text
-            try:
-                translated = GoogleTranslator(source="en", target="ar").translate(target_word)
-            except:
-                translated = "not found"
-
-            if not translated:
-                translated = "not found"
+            translated = safe_translate(target_word, "en", "ar")
 
             try:
                 ipa_en = ipa.convert(target_word)
@@ -162,14 +157,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             voice_text = target_word
 
         else:
-            try:
-                translated = GoogleTranslator(source="ar", target="en").translate(text)
-            except:
-                translated = "not found"
-
-            if not translated:
-                translated = "not found"
-
+            translated = safe_translate(text, "ar", "en")
             target_word = translated if translated != "not found" else text
 
             try:
