@@ -75,17 +75,23 @@ def get_linguistic_analysis(text):
             response = ai_client.models.generate_content(
                 model='gemini-2.0-flash',
                 contents=prompt,
-                config={
-                    'response_mime_type': 'application/json'
-                },
             )
-            data = json.loads(response.text)
+            
+            # تنظيف النص واستخراج الـ JSON بدقة لتجنب أخطاء التنسيق
+            res_text = response.text.strip()
+            if "```json" in res_text:
+                res_text = res_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in res_text:
+                res_text = res_text.split("```")[1].split("```")[0].strip()
+                
+            data = json.loads(res_text)
             return {
                 "translation": data.get("translation", "not found"),
                 "ipa": data.get("ipa", "IPA not found"),
                 "phonetic_arabic": data.get("phonetic_arabic", "غير متوفر")
             }
-        except:
+        except Exception as e:
+            print(f"AI parsing error: {e}")
             time.sleep(0.5)
             
     return {"translation": "not found", "ipa": "IPA not found", "phonetic_arabic": "غير متوفر"}
