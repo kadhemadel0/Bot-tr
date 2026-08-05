@@ -1,11 +1,5 @@
-
-
-
-
 python-telegram-bot
 deep-translator
 gTTS
 eng-to-ipa
 Flask
-
-
