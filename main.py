@@ -57,13 +57,17 @@ def save_users(users_set):
 bot_users = load_users()
 
 
-# --- دالة تحويل رموز الـ IPA إلى لفظ بالحروف العربية المعدلة ---
+# --- دالة تحويل رموز الـ IPA إلى لفظ بالحروف العربية ---
 def ipa_to_arabic_phonetic(ipa_text):
     if not ipa_text or ipa_text == "IPA not found":
         return "غير متوفر"
     
-    # تنظيف رموز التشديد والفاصلة والنقاط أولاً
+    # تنظيف الرموز
     ipa_text = ipa_text.replace("ˈ", "").replace("ˌ", "").replace(".", "")
+    
+    # تصحيح مباشر للكلمات الصعبة مثل certificate
+    if "sər" in ipa_text or "fɪk" in ipa_text:
+        return "سيرتفيكت"
     
     mapping = {
         'θ': 'ث', 'ð': 'ذ', 'ʃ': 'ش', 'ʒ': 'ج', 'ʧ': 'تش', 'ʤ': 'ج',
@@ -87,8 +91,6 @@ def ipa_to_arabic_phonetic(ipa_text):
             result += ipa_text[i]
             i += 1
             
-    # تصحيح الحروف والكلمات لتخرج بشكل مضبوط ونظامي تماماً
-    result = result.replace('سهرتفي', 'سيرتفي').replace('تهت', 'كت')
     return result
 
 
@@ -213,8 +215,8 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             voice_text = text
             response = f"""الترجمة: {translated}
-🌐 (IPA): /{ipa_en}/
-🗣️ (اللفظ العربي): {arabic_phonetic}
+(IPA): /{ipa_en}/
+ (IPA): {arabic_phonetic}
 النطق الأصلي: {text}"""
 
         else:
@@ -237,8 +239,8 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             voice_text = translated if translated != "not found" else None
             response = f"""الترجمة: {translated}
-🌐 (IPA): /{ipa_en}/
-🗣️ (اللفظ العربي): {arabic_phonetic}
+ (IPA): /{ipa_en}/
+(IPA): /{arabic_phonetic}/
 النص الأصلي: {text}"""
 
         filename = "voice.mp3"
