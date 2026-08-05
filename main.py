@@ -16,6 +16,8 @@ import re
 import os
 from flask import Flask
 import threading
+from PIL import Image
+import pytesseract
 
 # --- إعدادات سيرفر الـ Flask لإبقاء البوت شغال على Render ---
 app_flask = Flask('')
@@ -44,7 +46,8 @@ Welcome to the Translation Bot
 Features:
 - English ↔ Arabic Translation
 - IPA (Phonetic Transcription)
-- Voice Pronunciation
+- Voice Pronunciation (English only)
+- Image Text Translation (OCR)
 - Spelling Correction
 
 Dev: @Xkadhem
@@ -62,7 +65,6 @@ def correct_spelling(sentence):
     changed = False
 
     for word in words:
-        # إذا الكلمة تبدأ بحرف كبير (مثل الأسماء Ali, Ahmed)، نتخلى عنها وما نغيرها أبداً
         if word[0].isupper():
             continue
             
@@ -74,15 +76,20 @@ def correct_spelling(sentence):
     return corrected, changed
 
 
-async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
+# دالة موحدة لمعالجة النصوص (سواء أرسلها المستخدم كتابةً أو تم استخراجها من صورة)
+async def process_translation(update: Update, text: str, is_from_image: bool = False):
+    text = text.strip()
+    if not text:
+        await update.message.reply_text("not found")
+        return
+
     is_arabic = contains_arabic(text)
 
     try:
         if not is_arabic:
             corrected, changed = correct_spelling(text)
 
-            if corrected != text:
+            if corrected != text and not is_from_image:
                 await update.message.reply_text(
                     f"✍️ Did you mean?\n\n{corrected}"
                 )
@@ -99,12 +106,9 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 translated = "not found"
 
-            # إذا الترجمة طلعت فارغة أو متشابهة بطريقة غريبة
             if not translated or translated.strip() == "":
                 translated = "not found"
 
-            voice_text = text
-            
             try:
                 ipa_text = ipa.convert(text)
                 if ipa_text.strip() == "" or "?" in ipa_text:
@@ -117,6 +121,24 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 النطق الأصلي:{text}
 """
+            # الكلمات الإنجليزية: توليد وإرسال ملف الصوت (Voice)
+            filename = "voice.mp3"
+            try:
+                gTTS(
+                    text=text,
+                    lang="en",
+                    slow=False
+                ).save(filename)
+            except Exception:
+                filename = None
+
+            await update.message.reply_text(response)
+
+            if filename and os.path.exists(filename):
+                with open(filename, "rb") as audio:
+                    await update.message.reply_voice(audio)
+                os.remove(filename)
+
         else:
             try:
                 translated = GoogleTranslator(
@@ -128,11 +150,8 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 translated = "not found"
 
-            # التحقق إذا الكلمة العربية خطأ أو مو مفهومة
             if not translated or translated.strip() == "" or translated.lower() == text.lower():
                 translated = "not found"
-
-            voice_text = translated
             
             try:
                 ipa_text = ipa.convert(translated)
@@ -142,38 +161,53 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ipa_text = "IPA not found"
 
             response = f"""
-            الترجمه : {translated}
+الترجمه : {translated}
 
 (IPA): /{ipa_text}/
 النص الأصلي :{text}
-
 """
-
-        filename = "voice.mp3"
-
-        # لا تولد صوت إذا الكلمة غير موجودة أو خطأ
-        if voice_text and voice_text != "not found":
-            try:
-                gTTS(
-                    text=voice_text,
-                    lang="en",
-                    slow=False
-                ).save(filename)
-            except Exception:
-                filename = None
-        else:
-            filename = None
-
-        await update.message.reply_text(response)
-
-        if filename and os.path.exists(filename):
-            with open(filename, "rb") as audio:
-                await update.message.reply_voice(audio)
-            os.remove(filename)
+            # الكلمات العربية: إرسال النص والترجمة والـ IPA فقط (بدون فويس نهائياً)
+            await update.message.reply_text(response)
 
     except Exception as e:
         print(f"Error occurred: {e}")
         await update.message.reply_text("not found")
+
+
+# معالج النصوص العادية
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    await process_translation(update, text, is_from_image=False)
+
+
+# معالج الصور الجديد (OCR)
+async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        photo = update.message.photo[-1]
+        file = await context.bot.get_file(photo.file_id)
+        
+        image_path = "downloaded_image.jpg"
+        await file.download_to_drive(image_path)
+        
+        extracted_text = pytesseract.image_to_string(Image.open(image_path))
+        
+        if os.path.exists(image_path):
+            os.remove(image_path)
+            
+        cleaned_text = extracted_text.strip()
+        
+        if not cleaned_text:
+            await update.message.reply_text("❌ لم يتم العثور على نص واضح داخل الصورة.")
+            return
+            
+        await update.message.reply_text(f"📷 النص المستخرج من الصورة:\n`{cleaned_text}`", parse_mode="Markdown")
+        
+        # معالجة النص المستخرج مثل الكلمة الإنجليزية تماماً
+        await process_translation(update, cleaned_text, is_from_image=True)
+        
+    except Exception as e:
+        print(f"Image error: {e}")
+        await update.message.reply_text("حدث خطأ أثناء قراءة الصورة.")
 
 
 def main():
@@ -189,7 +223,15 @@ def main():
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            handle
+            handle_text
+        )
+    )
+
+    # معالج الصور الجديد
+    app.add_handler(
+        MessageHandler(
+            filters.PHOTO,
+            handle_image
         )
     )
 
