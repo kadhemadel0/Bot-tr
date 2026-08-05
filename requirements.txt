@@ -5,8 +5,7 @@ pyspellchecker
 eng-to-ipa
 flask
 requests
-Pillow
-pytesseract
+
 
 
 
