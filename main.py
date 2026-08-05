@@ -1,4 +1,3 @@
-
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -64,19 +63,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     
-    # تسجيل المستخدم الجديد وإرسال تنبيه للمالك
-    if user_id not in bot_users:
+    # تحقق إذا الشخص جديد
+    is_new = user_id not in bot_users
+    
+    if is_new:
         bot_users.add(user_id)
         save_users(bot_users)
         
-        username_str = f"@{user.username}" if user.username else "لا يوجد يوزر"
-        admin_notification = f"🚨 شخص جديد دخل للبوت!\n\n👤 الاسم: {user.full_name}\n🔗 اليوزر: {username_str}\n🆔 الأيدي: `{user_id}`\n📊 العدد الكلي: {len(bot_users)}"
-        
-        try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_notification, parse_mode="Markdown")
-        except Exception as e:
-            print(f"Error sending admin notification: {e}")
+        # إرسال إشعار للمالك فقط إذا مو المالك هو اللي داس ستارت
+        if user_id != ADMIN_ID:
+            username_str = f"@{user.username}" if user.username else "لا يوجد يوزر"
+            admin_notification = f"🚨 شخص جديد دخل للبوت!\n\n👤 الاسم: {user.full_name}\n🔗 اليوزر: {username_str}\n🆔 الأيدي: `{user_id}`\n📊 العدد الكلي: {len(bot_users)}"
+            try:
+                await context.bot.send_message(chat_id=ADMIN_ID, text=admin_notification, parse_mode="Markdown")
+            except Exception as e:
+                print(f"Error sending admin notification: {e}")
 
+    # رسالة الترحيب الأساسية
     text = """
 Welcome to the Translation Bot
 
@@ -88,7 +91,11 @@ Features:
 
 Dev: @Xkadhem
 """
-    await update.message.reply_text(text.strip())
+    # إذا أنت دخلت بحسابك الأساسي (المالك)، راح تطلع لك جوه القائمة عدد الأعضاء تلقائياً!
+    if user_id == ADMIN_ID:
+        text += f"\n\n📊 **لوحة التحكم الخاصة بالمطور:**\n- عدد المستخدمين الكلي: {len(bot_users)} شخص."
+
+    await update.message.reply_text(text.strip(), parse_mode="Markdown")
 
 
 # --- أمر معرفة عدد المستخدمين (للمالك فقط) ---
@@ -198,11 +205,11 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not translated or translated.strip() == "" or translated.lower() == text.lower():
                 translated = "not found"
 
-            voice_text = None  # الكلمات العربية بدون صوت نهائياً
+            voice_text = None  
             
             try:
                 ipa_text = ipa.convert(translated)
-                if ipa_text.script == "" or "?" in ipa_text or translated == "not found":
+                if ipa_text.strip() == "" or "?" in ipa_text or translated == "not found":
                     ipa_text = "IPA not found"
             except Exception:
                 ipa_text = "IPA not found"
@@ -242,7 +249,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().TOKEN(TOKEN).build() if hasattr(ApplicationBuilder().token(TOKEN), 'build') else ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_command))
@@ -262,3 +269,4 @@ def main():
 if __name__ == "__main__":
     keep_alive()
     main()
+
