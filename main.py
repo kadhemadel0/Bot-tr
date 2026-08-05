@@ -62,12 +62,7 @@ def ipa_to_arabic_phonetic(ipa_text):
     if not ipa_text or ipa_text == "IPA not found":
         return "غير متوفر"
     
-    # تنظيف الرموز
     ipa_text = ipa_text.replace("ˈ", "").replace("ˌ", "").replace(".", "")
-    
-    # تصحيح مباشر للكلمات الصعبة مثل certificate
-    if "sər" in ipa_text or "fɪk" in ipa_text:
-        return "سيرتفيكت"
     
     mapping = {
         'θ': 'ث', 'ð': 'ذ', 'ʃ': 'ش', 'ʒ': 'ج', 'ʧ': 'تش', 'ʤ': 'ج',
@@ -116,10 +111,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Welcome to the Translation Bot
 
 Features:
-- English ↔ Arabic Translation
-- IPA & Arabic Phonetic spelling
-- Voice Pronunciation
-- Spelling Correction
+- EN ➔ AR: Translation + IPA (EN & AR Phonetic)
+- AR ➔ EN: Translation + Voice Pronunciation
 
 Dev: @Xkadhem
 """
@@ -187,13 +180,8 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if not is_arabic:
+            # إنجليزي إلى عربي (بدون فويس، عرض الترجمة والـ IPA الإنجليزي والعربي قريبة من بعضها)
             corrected, changed = correct_spelling(text)
-
-            if corrected != text:
-                await update.message.reply_text(
-                    f"✍️ Did you mean?\n\n{corrected}"
-                )
-
             text = corrected
             
             try:
@@ -213,13 +201,11 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             arabic_phonetic = ipa_to_arabic_phonetic(ipa_en)
 
-            voice_text = text
-            response = f"""الترجمة: {translated}
-(IPA): /{ipa_en}/
- (IPA): {arabic_phonetic}
-النطق الأصلي: {text}"""
+            response = f"الترجمة: {translated}\nIPA: /{ipa_en}/\nاللفظ العربي: {arabic_phonetic}"
+            await update.message.reply_text(response)
 
         else:
+            # عربي إلى إنجليزي (ترجمة + فويس فقط بدون أي نصوص إضافية)
             try:
                 translated = GoogleTranslator(source="ar", target="en").translate(text)
             except:
@@ -228,34 +214,20 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not translated:
                 translated = "not found"
 
-            try:
-                ipa_en = ipa.convert(translated) if translated != "not found" else "IPA not found"
-                if not ipa_en or "?" in ipa_en:
-                    ipa_en = "IPA not found"
-            except:
-                ipa_en = "IPA not found"
+            await update.message.reply_text(translated)
 
-            arabic_phonetic = ipa_to_arabic_phonetic(ipa_en) if translated != "not found" else "غير متوفر"
-
-            voice_text = translated if translated != "not found" else None
-            response = f"""الترجمة: {translated}
- (IPA): /{ipa_en}/
-(IPA): /{arabic_phonetic}/
-النص الأصلي: {text}"""
-
-        filename = "voice.mp3"
-        if voice_text and voice_text != "not found":
-            try:
-                gTTS(text=voice_text, lang="en", slow=False).save(filename)
-                if os.path.exists(filename):
-                    with open(filename, "rb") as audio:
-                        await update.message.reply_voice(audio)
-                    os.remove(filename)
-            except:
-                if os.path.exists(filename):
-                    os.remove(filename)
-
-        await update.message.reply_text(response)
+            # إرسال الفويس الصوتي للكلمة الإنجليزية المترجمة
+            filename = "voice.mp3"
+            if translated and translated != "not found":
+                try:
+                    gTTS(text=translated, lang="en", slow=False).save(filename)
+                    if os.path.exists(filename):
+                        with open(filename, "rb") as audio:
+                            await update.message.reply_voice(audio)
+                        os.remove(filename)
+                except:
+                    if os.path.exists(filename):
+                        os.remove(filename)
 
     except Exception as e:
         print(f"Error occurred: {e}")
