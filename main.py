@@ -37,6 +37,7 @@ def keep_alive():
 TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
+BOT_USERNAME = "@Xkadhem"
 spell = SpellChecker(language="en")
 
 
@@ -57,8 +58,21 @@ def save_users(users_set):
 bot_users = load_users()
 
 
-# --- دالة تحويل رموز الـ IPA إلى لفظ بالحروف العربية ---
-def ipa_to_arabic_phonetic(ipa_text):
+# --- دالة تحويل رموز الـ IPA إلى لفظ بالحروف العربية مع تصحيح ذكي ---
+def ipa_to_arabic_phonetic(word, ipa_text):
+    custom_corrections = {
+        "certificate": "سيرتفيكت",
+        "sunday": "ساندي",
+        "monday": "ماندي",
+        "fancy": "فانسي",
+        "deluxe": "ديلوكس",
+        "camping": "كامبينغ"
+    }
+    
+    clean_word = word.lower().strip()
+    if clean_word in custom_corrections:
+        return custom_corrections[clean_word]
+
     if not ipa_text or ipa_text == "IPA not found":
         return "غير متوفر"
     
@@ -107,19 +121,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"Error sending admin notification: {e}")
 
-    text = """
-Welcome to the Translation Bot
-
-Features:
-- EN ➔ AR: Translation + IPA (EN & AR Phonetic) + Voice
-- AR ➔ EN: Translation + Voice
-
-Dev: @Xkadhem
-"""
-    if user_id == ADMIN_ID:
-        text += f"\n\n📊 **لوحة التحكم الخاصة بالمطور:**\n- عدد المستخدمين الكلي: {len(bot_users)} شخص."
-
-    await update.message.reply_text(text.strip(), parse_mode="Markdown")
+    # إرسال يوزر البوت فقط عند الضغط على start
+    await update.message.reply_text(BOT_USERNAME)
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,47 +131,8 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📊 عدد المستخدمين الحاليين للبوت: {len(bot_users)} شخص.")
 
 
-async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-        
-    message_text = " ".join(context.args)
-    if not message_text:
-        await update.message.reply_text("⚠️ استعمل الأمر هكذا:\n`/broadcast رسالتك هنا`", parse_mode="Markdown")
-        return
-
-    success_count = 0
-    fail_count = 0
-
-    for uid in bot_users:
-        try:
-            await context.bot.send_message(chat_id=uid, text=message_text)
-            success_count += 1
-        except Exception:
-            fail_count += 1
-
-    await update.message.reply_text(f"✅ تم إرسال الإذاعة بنجاح!\n- وصلت إلى: {success_count}\n- فشلت عند: {fail_count}")
-
-
 def contains_arabic(text):
     return any('\u0600' <= c <= '\u06FF' for c in text)
-
-
-def correct_spelling(sentence):
-    words = re.findall(r"[A-Za-z']+", sentence)
-    corrected = sentence
-    changed = False
-
-    for word in words:
-        if word[0].isupper():
-            continue
-            
-        new = spell.correction(word)
-        if new and new.lower() != word.lower():
-            corrected = corrected.replace(word, new, 1)
-            changed = True
-
-    return corrected, changed
 
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -180,12 +144,10 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if not is_arabic:
-            # إنجليزي إلى عربي (ترجمة، IPA إنجليزي، لفظ عربي، والفويس الصوتي وياها)
-            corrected, changed = correct_spelling(text)
-            text = corrected
-            
+            # إدخال إنجليزي
+            target_word = text
             try:
-                translated = GoogleTranslator(source="en", target="ar").translate(text)
+                translated = GoogleTranslator(source="en", target="ar").translate(target_word)
             except:
                 translated = "not found"
 
@@ -193,21 +155,17 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 translated = "not found"
 
             try:
-                ipa_en = ipa.convert(text)
+                ipa_en = ipa.convert(target_word)
                 if not ipa_en or "?" in ipa_en:
                     ipa_en = "IPA not found"
             except:
                 ipa_en = "IPA not found"
 
-            arabic_phonetic = ipa_to_arabic_phonetic(ipa_en)
-
-            response = f"الترجمة: {translated}\nIPA: /{ipa_en}/\nاللفظ العربي: {arabic_phonetic}"
-            await update.message.reply_text(response)
-
-            voice_text = text
+            arabic_phonetic = ipa_to_arabic_phonetic(target_word, ipa_en)
+            voice_text = target_word
 
         else:
-            # عربي إلى إنجليزي (ترجمة إنجليزية + فويس فقط)
+            # إدخال عربي (يترجم للإنجليزية ثم يستخرج IPA واللفظ والفويس تماماً مثل الإنجليزي)
             try:
                 translated = GoogleTranslator(source="ar", target="en").translate(text)
             except:
@@ -216,10 +174,23 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not translated:
                 translated = "not found"
 
-            await update.message.reply_text(translated)
-            voice_text = translated if translated != "not found" else None
+            target_word = translated if translated != "not found" else text
 
-        # إرسال الفويس الصوتي في الحالتين
+            try:
+                ipa_en = ipa.convert(target_word) if translated != "not found" else "IPA not found"
+                if not ipa_en or "?" in ipa_en:
+                    ipa_en = "IPA not found"
+            except:
+                ipa_en = "IPA not found"
+
+            arabic_phonetic = ipa_to_arabic_phonetic(target_word, ipa_en) if translated != "not found" else "غير متوفر"
+            voice_text = target_word if translated != "not found" else None
+
+        # بناء الرد المرتب حسب طلبك
+        response = f"الترجمة: {translated}\nIPA: /{ipa_en}/\nاللفظ العربي: {arabic_phonetic}"
+        await update.message.reply_text(response)
+
+        # إرسال الفويس الصوتي
         filename = "voice.mp3"
         if voice_text and voice_text != "not found":
             try:
@@ -244,7 +215,6 @@ def main():
 
             app.add_handler(CommandHandler("start", start))
             app.add_handler(CommandHandler("stats", stats_command))
-            app.add_handler(CommandHandler("broadcast", broadcast_command))
 
             app.add_handler(
                 MessageHandler(
