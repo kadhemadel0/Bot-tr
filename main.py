@@ -10,7 +10,6 @@ from telegram.ext import (
 from deep_translator import GoogleTranslator
 from deep_translator.exceptions import TranslationNotFound
 from gtts import gTTS
-from spellchecker import SpellChecker
 import eng_to_ipa as ipa
 import re
 import os
@@ -38,7 +37,6 @@ TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
 BOT_USERNAME = "@Xkadhem"
-spell = SpellChecker(language="en")
 
 
 # --- دوال حفظ وإدارة المستخدمين ---
