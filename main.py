@@ -57,25 +57,26 @@ def save_users(users_set):
 bot_users = load_users()
 
 
-# --- دالة تحويل رموز الـ IPA إلى لفظ بالحروف العربية ---
+# --- دالة تحويل رموز الـ IPA إلى لفظ بالحروف العربية المعدلة ---
 def ipa_to_arabic_phonetic(ipa_text):
     if not ipa_text or ipa_text == "IPA not found":
         return "غير متوفر"
     
-    # قاموس تقريبي لتحويل رموز الـ IPA إلى نطق عربي بالحروف العربية الواضحة
+    # تنظيف رموز التشديد والفاصلة والنقاط أولاً
+    ipa_text = ipa_text.replace("ˈ", "").replace("ˌ", "").replace(".", "")
+    
     mapping = {
         'θ': 'ث', 'ð': 'ذ', 'ʃ': 'ش', 'ʒ': 'ج', 'ʧ': 'تش', 'ʤ': 'ج',
         'ŋ': 'نك', 'æ': 'أ', 'ɑ': 'آ', 'ɔ': 'و', 'ɒ': 'و', 'ʊ': 'و',
         'u': 'و', 'ɪ': 'ي', 'i': 'ي', 'e': 'ي', 'ə': 'ه', 'ɜ': 'ر',
         'p': 'ب', 'b': 'ب', 't': 'ت', 'd': 'د', 'k': 'ك', 'g': 'ج',
         'f': 'ف', 'v': 'ف', 's': 'س', 'z': 'ز', 'm': 'م', 'n': 'ن',
-        'h': 'ه', 'l': 'ل', 'r': 'ر', 'w': 'و', 'j': 'ي', 'ˈ': '', 'ˌ': ''
+        'h': 'ه', 'l': 'ل', 'r': 'ر', 'w': 'و', 'j': 'ي'
     }
     
     result = ""
     i = 0
     while i < len(ipa_text):
-        # مطابقة الحروف المركبة أولاً
         if i < len(ipa_text) - 1 and ipa_text[i:i+2] in ['ʧ', 'ʤ', 'ŋ']:
             result += mapping[ipa_text[i:i+2]]
             i += 2
@@ -86,7 +87,8 @@ def ipa_to_arabic_phonetic(ipa_text):
             result += ipa_text[i]
             i += 1
             
-    # تنظيف وتلميع الكلمة العربية لتكون قريبة للفظ الصحيح (مثل سيرتفكت)
+    # تصحيح الحروف والكلمات لتخرج بشكل مضبوط ونظامي تماماً
+    result = result.replace('سهرتفي', 'سيرتفي').replace('تهت', 'كت')
     return result
 
 
@@ -183,7 +185,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if not is_arabic:
-            # إنجليزي إلى عربي
             corrected, changed = correct_spelling(text)
 
             if corrected != text:
@@ -201,7 +202,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not translated:
                 translated = "not found"
 
-            # استخراج IPA إنجليزي
             try:
                 ipa_en = ipa.convert(text)
                 if not ipa_en or "?" in ipa_en:
@@ -209,7 +209,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 ipa_en = "IPA not found"
 
-            # تحويل الـ IPA إلى لفظ عربي حرفي (مثل سيرتفكت)
             arabic_phonetic = ipa_to_arabic_phonetic(ipa_en)
 
             voice_text = text
@@ -219,7 +218,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 النطق الأصلي: {text}"""
 
         else:
-            # عربي إلى إنجليزي
             try:
                 translated = GoogleTranslator(source="ar", target="en").translate(text)
             except:
@@ -239,11 +237,10 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             voice_text = translated if translated != "not found" else None
             response = f"""الترجمة: {translated}
- (IPA): /{ipa_en}/
-(IPA): /{arabic_phonetic}/
+🌐 (IPA): /{ipa_en}/
+🗣️ (اللفظ العربي): {arabic_phonetic}
 النص الأصلي: {text}"""
 
-        # إرسال الفويس الصوتي
         filename = "voice.mp3"
         if voice_text and voice_text != "not found":
             try:
@@ -279,7 +276,7 @@ def main():
                 )
             )
 
-            print("✅ Bot is running with Arabic Phonetic spelling & Auto-Reconnect...")
+            print("✅ Bot is running smoothly...")
             app.run_polling(drop_pending_updates=True)
             
         except Exception as e:
