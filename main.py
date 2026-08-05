@@ -17,6 +17,7 @@ import os
 import json
 from flask import Flask
 import threading
+import time
 
 # --- إعدادات سيرفر الـ Flask لإبقاء البوت شغال على Render ---
 app_flask = Flask('')
@@ -34,10 +35,7 @@ def keep_alive():
 # --------------------------------------------------------
 
 TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
-
-# 👑 أيدي المالك الخاص بك
 ADMIN_ID = 7964624188
-
 USERS_FILE = "users.json"
 spell = SpellChecker(language="en")
 
@@ -82,8 +80,8 @@ Welcome to the Translation Bot
 
 Features:
 - English ↔ Arabic Translation
-- IPA (Phonetic Transcription)
-- Voice Pronunciation (English only)
+- IPA (Phonetic Transcription for EN & AR)
+- Voice Pronunciation
 - Spelling Correction
 
 Dev: @Xkadhem
@@ -94,14 +92,12 @@ Dev: @Xkadhem
     await update.message.reply_text(text.strip(), parse_mode="Markdown")
 
 
-# --- أمر معرفة عدد المستخدمين (للمالك فقط) ---
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     await update.message.reply_text(f"📊 عدد المستخدمين الحاليين للبوت: {len(bot_users)} شخص.")
 
 
-# --- أمر إرسال رسالة جماعية لكل الأعضاء (للمالك فقط) ---
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -146,11 +142,15 @@ def correct_spelling(sentence):
 
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+        
     text = update.message.text.strip()
     is_arabic = contains_arabic(text)
 
     try:
         if not is_arabic:
+            # إنجليزي إلى عربي
             corrected, changed = correct_spelling(text)
 
             if corrected != text:
@@ -161,83 +161,84 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = corrected
             
             try:
-                translated = GoogleTranslator(
-                    source="en",
-                    target="ar"
-                ).translate(text)
-            except TranslationNotFound:
-                translated = "not found"
-            except Exception:
+                translated = GoogleTranslator(source="en", target="ar").translate(text)
+            except:
                 translated = "not found"
 
-            if not translated or translated.strip() == "":
+            if not translated:
                 translated = "not found"
+
+            # الرسم الصوتي الإنجليزي (IPA للنص الأصلي)
+            try:
+                ipa_en = ipa.convert(text)
+                if not ipa_en or "?" in ipa_en:
+                    ipa_en = "IPA not found"
+            except:
+                ipa_en = "IPA not found"
+
+            # الرسم الصوتي العربي (IPA للترجمة العربية إذا تحولت لكلمات إنجليزية أو رمزيّاً)
+            try:
+                ipa_ar = ipa.convert(translated) if translated != "not found" else "IPA not found"
+                if not ipa_ar or "?" in ipa_ar:
+                    ipa_ar = "IPA not found"
+            except:
+                ipa_ar = "IPA not found"
 
             voice_text = text
-            
-            try:
-                ipa_text = ipa.convert(text)
-                if ipa_text.strip() == "" or "?" in ipa_text:
-                    ipa_text = "IPA not found"
-            except Exception:
-                ipa_text = "IPA not found"
+            response = f"""الترجمة: {translated}
+🌐 (IPA الإنجليزي): /{ipa_en}/
+🌐 (IPA العربي): /{ipa_ar}/
+النطق الأصلي: {text}"""
 
-            response = f""" الترجمة:{translated}
-(IPA):/{ipa_text}/
-
-النطق الأصلي:{text}
-"""
         else:
+            # عربي إلى إنجليزي
             try:
-                translated = GoogleTranslator(
-                    source="ar",
-                    target="en"
-                ).translate(text)
-            except TranslationNotFound:
-                translated = "not found"
-            except Exception:
+                translated = GoogleTranslator(source="ar", target="en").translate(text)
+            except:
                 translated = "not found"
 
-            if not translated or translated.strip() == "" or translated.lower() == text.lower():
+            if not translated:
                 translated = "not found"
 
-            voice_text = None  
-            
+            # الرسم الصوتي الإنجليزي (IPA للترجمة الإنجليزية الناتجة)
             try:
-                ipa_text = ipa.convert(translated)
-                if ipa_text.strip() == "" or "?" in ipa_text or translated == "not found":
-                    ipa_text = "IPA not found"
-            except Exception:
-                ipa_text = "IPA not found"
+                ipa_en = ipa.convert(translated) if translated != "not found" else "IPA not found"
+                if not ipa_en or "?" in ipa_en:
+                    ipa_en = "IPA not found"
+            except:
+                ipa_en = "IPA not found"
 
-            response = f"""
-            الترجمه : {translated}
+            # الرسم الصوتي للنص العربي الأصلي
+            try:
+                ipa_ar = ipa.convert(text)
+                if not ipa_ar or "?" in ipa_ar:
+                    ipa_ar = "IPA not found"
+            except:
+                ipa_ar = "IPA not found"
 
-(IPA): /{ipa_text}/
-النص الأصلي :{text}
+            voice_text = translated if translated != "not found" else None
+            response = f"""الترجمة: {translated}
+🌐 (IPA الإنجليزي): /{ipa_en}/
+🌐 (IPA العربي): /{ipa_ar}/
+النص الأصلي: {text}"""
 
-"""
-
+        # إرسال الفويس الصوتي باللغة الإنجليزية
         filename = "voice.mp3"
-
+        audio_sent = False
+        
         if voice_text and voice_text != "not found":
             try:
-                gTTS(
-                    text=voice_text,
-                    lang="en",
-                    slow=False
-                ).save(filename)
-            except Exception:
-                filename = None
-        else:
-            filename = None
+                gTTS(text=voice_text, lang="en", slow=False).save(filename)
+                if os.path.exists(filename):
+                    with open(filename, "rb") as audio:
+                        await update.message.reply_voice(audio)
+                    os.remove(filename)
+                    audio_sent = True
+            except:
+                if os.path.exists(filename):
+                    os.remove(filename)
 
         await update.message.reply_text(response)
-
-        if filename and os.path.exists(filename):
-            with open(filename, "rb") as audio:
-                await update.message.reply_voice(audio)
-            os.remove(filename)
 
     except Exception as e:
         print(f"Error occurred: {e}")
@@ -245,22 +246,27 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    # تم تصحيح سطر البناء هنا ليكون مضبوطاً
-    app = ApplicationBuilder().token(TOKEN).build()
+    while True:
+        try:
+            app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats_command))
-    app.add_handler(CommandHandler("broadcast", broadcast_command))
+            app.add_handler(CommandHandler("start", start))
+            app.add_handler(CommandHandler("stats", stats_command))
+            app.add_handler(CommandHandler("broadcast", broadcast_command))
 
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            handle
-        )
-    )
+            app.add_handler(
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    handle
+                )
+            )
 
-    print("✅ Bot is running with Admin & User Tracking features...")
-    app.run_polling()
+            print("✅ Bot is running with IPA (EN/AR) & Auto-Reconnect...")
+            app.run_polling(drop_pending_updates=True)
+            
+        except Exception as e:
+            print(f"⚠️ Bot crashed: {e}. Restarting in 5 seconds...")
+            time.sleep(5)
 
 
 if __name__ == "__main__":
