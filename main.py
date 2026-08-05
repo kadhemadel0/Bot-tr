@@ -1,3 +1,4 @@
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -35,8 +36,8 @@ def keep_alive():
 
 TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 
-# ⚠️ ضع الأيدي الخاص بحسابك التليجرام هنا حصراً حتى تعمل صلاحيات المالك
-ADMIN_ID = 123456789  # <--- استبدل الرقم بأيدي حسابك الحقيقي
+# 👑 أيدي المالك الخاص بك
+ADMIN_ID = 7964624188
 
 USERS_FILE = "users.json"
 spell = SpellChecker(language="en")
@@ -201,7 +202,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             try:
                 ipa_text = ipa.convert(translated)
-                if ipa_text.strip() == "" or "?" in ipa_text or translated == "not found":
+                if ipa_text.script == "" or "?" in ipa_text or translated == "not found":
                     ipa_text = "IPA not found"
             except Exception:
                 ipa_text = "IPA not found"
