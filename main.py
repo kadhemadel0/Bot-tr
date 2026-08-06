@@ -7,6 +7,7 @@ from flask import Flask
 import threading
 import time
 from deep_translator import GoogleTranslator
+from g2p_en import G2p
 
 # --- إعدادات سيرفر الـ Flask لإبقاء البوت شغال على Render ---
 app_flask = Flask('')
@@ -26,15 +27,7 @@ def keep_alive():
 TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
-
-# قاموس أساسي للكلمات الخاصة بالمشروع لضمان دقتها المطلقة
-IPA_DICTIONARY = {
-    "certificate": "/sərˈtɪfɪkət/",
-    "student": "/ˈstjuːdənt/",
-    "students": "/ˈstjuːdənts/",
-    "translation": "/trænzˈleɪʃən/",
-    "translate": "/trænzˈleɪt/"
-}
+g2p = G2p()
 
 def load_users():
     if os.path.exists(USERS_FILE):
@@ -53,32 +46,6 @@ bot_users = load_users()
 
 def contains_arabic(text):
     return any('\u0600' <= c <= '\u06FF' for c in text)
-
-# دالة ذكية لإزالة الحروف الصامتة تلقائياً من أي كلمة جديدة
-def generate_smart_ipa(word):
-    w = word.lower().strip()
-    
-    # إذا كانت الكلمة موجودة بالقاموس الأساسي، نرجعها مباشرة
-    if w in IPA_DICTIONARY:
-        return IPA_DICTIONARY[w]
-    
-    # معالجة تلقائية للحروف الصامتة الشائعة بأي كلمة
-    # مثل kn -> n (مثل knife, knight)
-    if w.startswith("kn"):
-        w = "n" + w[2:]
-    # مثل wr -> r (مثل write, wrong)
-    elif w.startswith("wr"):
-        w = r"r" + w[2:]
-    # مثل mb بالنهاية -> m (مثل comb, bomb)
-    elif w.endswith("mb"):
-        w = w[:-1]
-    # مثل gh أو g قبل t -> t (مثل knight, thought)
-    w = w.replace("ght", "t").replace("gh", "")
-    # مثل حرف e صامت بالنهاية (مثل make -> mak تقريبی للرسم)
-    if w.endswith("e") and len(w) > 3 and w[-2] not in "aeiou":
-        w = w[:-1]
-        
-    return f"/{w}/"
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -111,12 +78,15 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             voice_text = text
             target_word = text.lower().strip()
 
-        # توليد الرسم الصوتي الذكي لكل الكلمات تلقائياً
-        ipa_str = generate_smart_ipa(target_word)
+        # استخراج الـ IPA الحقيقي والصحيح لكل الكلمات تلقائياً (مع معالجة الحروف الصامتة)
+        phonemes = g2p(target_word)
+        # تنظيف الرموز لتكون بشكل IPA سليم
+        clean_ipa = "".join([p for p in phonemes if p != ' ']).lower()
+        ipa_str = f"/{clean_ipa}/" if clean_ipa else f"/{target_word}/"
 
         # إذا كانت الكلمات أكثر من 4، نعرض الترجمة فقط بدون IPA
         if word_count > 4:
-            response = f"Translation : /{translated}/"
+            response = f"Translate : /{translated}/"
         else:
             response = (
                 f"Translate : /{translated}/\n"
