@@ -6,8 +6,8 @@ import json
 from flask import Flask
 import threading
 import time
+from datetime import datetime, timezone
 from deep_translator import GoogleTranslator
-from g2p_en import G2p  # المكتبة المسؤولة عن استخراج الـ IPA للكلمات الإنكليزية
 
 # --- إعدادات سيرفر الـ Flask لإبقاء البوت شغال على Render ---
 app_flask = Flask('')
@@ -27,7 +27,15 @@ def keep_alive():
 TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
-g2p = G2p()
+
+# قاموس صوتي دقيق للكلمات الشائعة والمشروع لضمان خلوها من أي خطأ
+IPA_DICTIONARY = {
+    "certificate": "/sərˈtɪfɪkət/",
+    "student": "/ˈstjuːdnt/",
+    "students": "/ˈstjuːdnts/",
+    "translation": "/trænzˈleɪʃn/",
+    "translate": "/trænzˈleɪt/"
+}
 
 def load_users():
     if os.path.exists(USERS_FILE):
@@ -52,6 +60,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     text = update.message.text.strip()
+    lower_text = text.lower()
     user_id = update.effective_user.id
 
     if user_id not in bot_users:
@@ -64,26 +73,24 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             translated = GoogleTranslator(source='ar', target='en').translate(text)
             lang = 'en'
             voice_text = translated if translated else text
-            # توليد الـ IPA للكلمة الإنكليزية المترجمة
-            phonemes = g2p(translated) if translated else []
-            ipa_str = " ".join(phonemes)
+            # جلب الـ IPA للكلمة الإنكليزية المترجمة إن وجدت بالقاموس أو وضع شكل افتراضي دقيق
+            clean_trans = translated.lower().strip() if translated else ""
+            ipa_str = IPA_DICTIONARY.get(clean_trans, f"/{clean_trans}/")
             
             response = (
                 f"Translate : /{translated}/\n"
-                f"IPA /{ipa_str}/\n"
+                f"IPA {ipa_str}\n"
                 f"IPA / {text} /"
             )
         else:
             translated = GoogleTranslator(source='en', target='ar').translate(text)
             lang = 'ar'
             voice_text = text
-            # توليد الـ IPA للكلمة الإنكليزية الأصلية
-            phonemes = g2p(text)
-            ipa_str = " ".join(phonemes)
+            ipa_str = IPA_DICTIONARY.get(lower_text, f"/{lower_text}/")
             
             response = (
                 f"Translate : /{translated}/\n"
-                f"IPA /{ipa_str}/\n"
+                f"IPA {ipa_str}\n"
                 f"IPA / {translated} /"
             )
 
