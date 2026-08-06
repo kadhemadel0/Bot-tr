@@ -7,7 +7,6 @@ from flask import Flask
 import threading
 import time
 from deep_translator import GoogleTranslator
-from g2p_en import G2p
 
 # --- إعدادات سيرفر الـ Flask لإبقاء البوت شغال على Render ---
 app_flask = Flask('')
@@ -28,9 +27,6 @@ TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
 
-# تهيئة مكتبة التحويل الصوتي لتحليل كل كلمات اللغة أوتوماتيكياً
-g2p = G2p()
-
 def load_users():
     if os.path.exists(USERS_FILE):
         try:
@@ -48,6 +44,20 @@ bot_users = load_users()
 
 def contains_arabic(text):
     return any('\u0600' <= c <= '\u06FF' for c in text)
+
+# دالة ذكية لإزالة الحروف الصامتة تلقائياً وضبط الرسم الصوتي لأي كلمة
+def clean_silent_letters(word):
+    w = word.lower().strip()
+    w = w.replace("dnes", "nes").replace("ds", "s")
+    if w.startswith("kn") or w.startswith("wr") or w.startswith("ps") or w.startswith("gn"):
+        w = w[1:]
+    w = w.replace("ght", "t").replace("gh", "")
+    if w.endswith("mb") or w.endswith("bt"):
+        w = w[:-1]
+    w = w.replace("lk", "k").replace("lm", "m").replace("alf", "af")
+    if w.endswith("e") and len(w) > 3 and w[-2] not in "aeiou":
+        w = w[:-1]
+    return f"/{w}/"
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -80,16 +90,10 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             voice_text = text
             target_word = text.lower().strip()
 
-        # توليد الرسم الصوتي الحقيقي لكل كلمات اللغة أوتوماتيكياً عبر المكتبة (بدون إدخال يدوي وبدون حروف صامتة)
-        phonemes = g2p(target_word)
-        clean_ipa = " ".join([p for p in phonemes if p.strip()])
-        
-        if clean_ipa:
-            ipa_str = f"/{clean_ipa}/"
-        else:
-            ipa_str = f"/{target_word}/"
+        # توليد الرسم الصوتي تلقائياً
+        ipa_str = clean_silent_letters(target_word)
 
-        # إذا كانت الكلمات أكثر من 4، نعرض الترجمة فقط بدون IPA
+        # إذا كانت الكلمات أكثر من 4، نعرض الترجمة فقط بدون IPA، وإذا أقل نعرض الترجمة مع الـ IPA دائماً
         if word_count > 4:
             response = f"Translate : /{translated}/"
         else:
