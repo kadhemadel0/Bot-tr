@@ -1,11 +1,5 @@
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from gtts import gTTS
 import os
 import json
@@ -32,9 +26,7 @@ def keep_alive():
 TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
-BOT_USERNAME = "@Xkadhem"
 
-# --- دوال حفظ وإدارة المستخدمين ---
 def load_users():
     if os.path.exists(USERS_FILE):
         try:
@@ -50,118 +42,66 @@ def save_users(users_set):
 
 bot_users = load_users()
 
-
 def contains_arabic(text):
     return any('\u0600' <= c <= '\u06FF' for c in text)
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = user.id
-    
-    is_new = user_id not in bot_users
-    
-    if is_new:
-        bot_users.add(user_id)
-        save_users(bot_users)
-        
-        if user_id != ADMIN_ID:
-            username_str = f"@{user.username}" if user.username else "لا يوجد يوزر"
-            admin_notification = f"🚨 شخص جديد دخل للبوت!\n\n👤 الاسم: {user.full_name}\n🔗 اليوزر: {username_str}\n🆔 الأيدي: `{user_id}`\n📊 العدد الكلي: {len(bot_users)}"
-            try:
-                await context.bot.send_message(chat_id=ADMIN_ID, text=admin_notification, parse_mode="Markdown")
-            except Exception as e:
-                print(f"Error sending admin notification: {e}")
-
-    await update.message.reply_text(f"أهلاً بك في بوت الترجمة! 🚀\n- أرسل أي كلمة لترجمتها.\n- للنطق اكتب: انطقي [الكلمة]\n- للـ IPA اكتب: اعطيني IPA [الكلمة]")
-
-
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    await update.message.reply_text(f"📊 عدد المستخدمين الحاليين للبوت: {len(bot_users)} شخص.")
-
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
         
     text = update.message.text.strip()
-    lower_text = text.lower()
+    user_id = update.effective_user.id
+
+    if user_id not in bot_users:
+        bot_users.add(user_id)
+        save_users(bot_users)
 
     try:
-        # 1. حالة طلب النطق (انطقي ...)
-        if lower_text.startswith("انطقي "):
-            target_word = text[6:].strip()
-            if not target_word:
-                await update.message.reply_text("يرجى كتابة الكلمة بعد كلمة انطقي.")
-                return
-            
-            filename = "voice.mp3"
-            try:
-                lang = "ar" if contains_arabic(target_word) else "en"
-                gTTS(text=target_word, lang=lang, slow=False).save(filename)
-                if os.path.exists(filename):
-                    with open(filename, "rb") as audio:
-                        await update.message.reply_voice(audio)
-                    os.remove(filename)
-            except Exception as e:
-                if os.path.exists(filename):
-                    os.remove(filename)
-                await update.message.reply_text("عذراً، حدث خطأ أثناء توليد الصوت.")
-            return
-
-        # 2. حالة طلب الـ IPA (اعطيني IPA ...)
-        if lower_text.startswith("اعطيني ipa "):
-            target_word = text[12:].strip()
-            if not target_word:
-                await update.message.reply_text("يرجى كتابة الكلمة المطلوبة.")
-                return
-            
-            # إرجاع رد مرتب وخالٍ من المشاكل
-            await update.message.reply_text(f"الرسم الصوتي (IPA) للكلمة `{target_word}` غير متوفر حالياً بدون الذكاء الاصطناعي، يمكنك استخدام أمر (انطقي {target_word}) للاستماع للصوت مباشرة!")
-            return
-
-        # 3. الحالة العادية: ترجمة مباشرة
         is_ar = contains_arabic(text)
         if is_ar:
             translated = GoogleTranslator(source='ar', target='en').translate(text)
+            lang = 'en'
+            voice_text = translated if translated else text
         else:
             translated = GoogleTranslator(source='en', target='ar').translate(text)
+            lang = 'ar'
+            voice_text = text
 
         if not translated:
-            translated = text # إرجاع الكلمة نفسها بدل not found إذا تعذر الترجمة
+            translated = text
 
-        response = f"الترجمة: {translated}"
+        # التنسيق المطلوب تماماً
+        response = (
+            f"Translate : /{translated}/\n"
+            f"IPA /---/\n"
+            f"IPA / {text} /"
+        )
+
+        # إرسال النص
         await update.message.reply_text(response)
 
-    except Exception as e:
-        print(f"Error occurred: {e}")
-        await update.message.reply_text(text)
+        # إرسال الصوت (فويس)
+        filename = "voice.mp3"
+        gTTS(text=voice_text, lang=lang, slow=False).save(filename)
+        if os.path.exists(filename):
+            with open(filename, "rb") as audio:
+                await update.message.reply_voice(audio)
+            os.remove(filename)
 
+    except Exception as e:
+        print(f"Error: {e}")
+        await update.message.reply_text(f"Translate : /{text}/")
 
 def main():
     while True:
         try:
             app = ApplicationBuilder().token(TOKEN).build()
-
-            app.add_handler(CommandHandler("start", start))
-            app.add_handler(CommandHandler("stats", stats_command))
-
-            app.add_handler(
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    handle
-                )
-            )
-
+            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
             print("✅ Bot is running smoothly...")
             app.run_polling(drop_pending_updates=True)
-            
         except Exception as e:
             print(f"⚠️ Bot crashed: {e}. Restarting in 5 seconds...")
             time.sleep(5)
-
 
 if __name__ == "__main__":
     keep_alive()
