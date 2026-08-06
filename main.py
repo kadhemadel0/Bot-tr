@@ -7,6 +7,7 @@ from flask import Flask
 import threading
 import time
 from deep_translator import GoogleTranslator
+from g2p_en import G2p  # المكتبة المسؤولة عن استخراج الـ IPA للكلمات الإنكليزية
 
 # --- إعدادات سيرفر الـ Flask لإبقاء البوت شغال على Render ---
 app_flask = Flask('')
@@ -26,6 +27,7 @@ def keep_alive():
 TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
+g2p = G2p()
 
 def load_users():
     if os.path.exists(USERS_FILE):
@@ -62,20 +64,26 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             translated = GoogleTranslator(source='ar', target='en').translate(text)
             lang = 'en'
             voice_text = translated if translated else text
-            # التنسيق المطلوب تماماً عندما تكون الكلمة بالعربي
+            # توليد الـ IPA للكلمة الإنكليزية المترجمة
+            phonemes = g2p(translated) if translated else []
+            ipa_str = " ".join(phonemes)
+            
             response = (
                 f"Translate : /{translated}/\n"
-                f"IPA /sərˈtɪfɪkət/\n"
+                f"IPA /{ipa_str}/\n"
                 f"IPA / {text} /"
             )
         else:
             translated = GoogleTranslator(source='en', target='ar').translate(text)
             lang = 'ar'
             voice_text = text
-            # التنسيق المطلوب تماماً عندما تكون الكلمة بالإنكليزي
+            # توليد الـ IPA للكلمة الإنكليزية الأصلية
+            phonemes = g2p(text)
+            ipa_str = " ".join(phonemes)
+            
             response = (
                 f"Translate : /{translated}/\n"
-                f"IPA /sərˈtɪfɪkət/\n"
+                f"IPA /{ipa_str}/\n"
                 f"IPA / {translated} /"
             )
 
