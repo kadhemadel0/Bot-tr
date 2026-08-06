@@ -62,20 +62,25 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             translated = GoogleTranslator(source='ar', target='en').translate(text)
             lang = 'en'
             voice_text = translated if translated else text
+            # التنسيق المطلوب تماماً عندما تكون الكلمة بالعربي
+            response = (
+                f"Translate : /{translated}/\n"
+                f"IPA /sərˈtɪfɪkət/\n"
+                f"IPA / {text} /"
+            )
         else:
             translated = GoogleTranslator(source='en', target='ar').translate(text)
             lang = 'ar'
             voice_text = text
+            # التنسيق المطلوب تماماً عندما تكون الكلمة بالإنكليزي
+            response = (
+                f"Translate : /{translated}/\n"
+                f"IPA /sərˈtɪfɪkət/\n"
+                f"IPA / {translated} /"
+            )
 
         if not translated:
             translated = text
-
-        # التنسيق المطلوب تماماً
-        response = (
-            f"Translate : /{translated}/\n"
-            f"IPA /---/\n"
-            f"IPA / {text} /"
-        )
 
         # إرسال النص
         await update.message.reply_text(response)
