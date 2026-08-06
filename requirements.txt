@@ -2,3 +2,4 @@ python-telegram-bot
 deep-translator
 gTTS
 flask
+g2p-en
