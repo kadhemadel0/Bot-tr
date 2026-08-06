@@ -1,5 +1,5 @@
 
 python-telegram-bot
-google-genai
+deep-translator
 gTTS
 Flask
