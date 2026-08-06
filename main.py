@@ -27,13 +27,17 @@ TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
 
-# قاموس صوتي دقيق للكلمات الشائعة والمشروع
+# قاموس صوتي أدق وأصح للكلمات الإنجليزية الشائعة والمشروع
 IPA_DICTIONARY = {
     "certificate": "/sərˈtɪfɪkət/",
-    "student": "/ˈstjuːdnt/",
-    "students": "/ˈstjuːdnts/",
-    "translation": "/trænzˈleɪʃn/",
-    "translate": "/trænzˈleɪt/"
+    "student": "/ˈstjuːdənt/",
+    "students": "/ˈstjuːdənts/",
+    "translation": "/trænzˈleɪʃən/",
+    "translate": "/trænzˈleɪt/",
+    "university": "/ˌjuːnɪˈvɜːsɪti/",
+    "college": "/ˈkɒlɪdʒ/",
+    "book": "/bʊk/",
+    "books": "/bʊks/"
 }
 
 def load_users():
@@ -70,31 +74,39 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         is_ar = contains_arabic(text)
+        
         if is_ar:
+            # إذا أرسل المستخدم عربي، نترجمه للإنكليزية
             translated = GoogleTranslator(source='ar', target='en').translate(text)
+            if not translated:
+                translated = text
+            
+            # الصوت دائماً يكون باللغة الإنكليزية للترجمة
             lang = 'en'
-            voice_text = translated if translated else text
+            voice_text = translated
+            
+            # جلب الـ IPA للكلمة الإنكليزية الناتجة
+            clean_trans = translated.lower().strip()
+            ipa_str = IPA_DICTIONARY.get(clean_trans, f"/{clean_trans}/")
         else:
+            # إذا أرسل المستخدم إنكليزي، نترجمه للعربية
             translated = GoogleTranslator(source='en', target='ar').translate(text)
-            lang = 'ar'
+            if not translated:
+                translated = text
+            
+            # الصوت يكون للكلمة الإنكليزية الأصلية (أو مثل ما طلبت يكون موجه للنص الأجنبي)
+            lang = 'en'
             voice_text = text
-
-        if not translated:
-            translated = text
+            
+            # جلب الـ IPA للكلمة الإنكليزية الأصلية
+            ipa_str = IPA_DICTIONARY.get(lower_text, f"/{lower_text}/")
 
         # إذا كانت الكلمات أكثر من 4، نعرض الترجمة فقط بدون IPA
         if word_count > 4:
-            response = f"translation : /{translated}/"
+            response = f"Translate : /{translated}/"
         else:
-            # إذا كانت كلمة أو جملة قصيرة (4 كلمات أو أقل)
-            if is_ar:
-                clean_trans = translated.lower().strip() if translated else ""
-                ipa_str = IPA_DICTIONARY.get(clean_trans, f"/{clean_trans}/")
-            else:
-                ipa_str = IPA_DICTIONARY.get(lower_text, f"/{lower_text}/")
-            
             response = (
-                f"translation : /{translated}/\n"
+                f"Translate : /{translated}/\n"
                 f"IPA {ipa_str}"
             )
 
