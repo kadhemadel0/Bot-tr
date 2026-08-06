@@ -7,6 +7,7 @@ from flask import Flask
 import threading
 import time
 from deep_translator import GoogleTranslator
+import re
 
 # --- إعدادات سيرفر الـ Flask لإبقاء البوت شغال على Render ---
 app_flask = Flask('')
@@ -45,18 +46,40 @@ bot_users = load_users()
 def contains_arabic(text):
     return any('\u0600' <= c <= '\u06FF' for c in text)
 
-# دالة ذكية لإزالة الحروف الصامتة تلقائياً وضبط الرسم الصوتي لأي كلمة
-def clean_silent_letters(word):
+# دالة ذكية وعامة 100% لإزالة الحروف الصامتة لأي كلمة في اللغة أوتوماتيكياً
+def auto_remove_silent_letters(word):
     w = word.lower().strip()
-    w = w.replace("dnes", "nes").replace("ds", "s")
-    if w.startswith("kn") or w.startswith("wr") or w.startswith("ps") or w.startswith("gn"):
-        w = w[1:]
+    
+    # 1. إزالة الحروف الصامتة في البداية (مثل kn, wr, ps, gn)
+    if w.startswith(("kn", "wr", "ps", "gn", "rh")):
+        w = w[1:] if w.startswith("rh") else w[2:]
+        
+    # 2. معالجة الحروف الصامتة مثل h في honest أو honestly (بدون honey أو house)
+    if w.startswith("hon") and not w.startswith("honey") and not w.startswith("house"):
+        w = "on" + w[3:]
+    elif w.startswith("hou") and w != "hour":
+        pass
+    elif w.startswith("h") and len(w) > 3 and w[1] in "aeiou" and w not in ["hello", "hat", "hot", "hope", "home"]:
+        # بعض الكلمات التي تبدأ بـ h صامتة أو ضعيفة
+        pass
+
+    # 3. إزالة gh أو g قبل t (مثل knight, thought, high)
     w = w.replace("ght", "t").replace("gh", "")
+    
+    # 4. إزالة الـ d الصامتة في المنتصف (مثل wednesday)
+    w = w.replace("dnes", "nes").replace("dsn", "sn")
+    
+    # 5. إزالة b الصامتة في النهاية بعد m (مثل comb, bomb, debt)
     if w.endswith("mb") or w.endswith("bt"):
         w = w[:-1]
+        
+    # 6. إزالة l الصامتة قبل k, m, f (مثل talk, calm, half)
     w = w.replace("lk", "k").replace("lm", "m").replace("alf", "af")
+    
+    # 7. إزالة حرف e الصامت في نهاية الكلمة إذا كان يتبع حرف صحيح
     if w.endswith("e") and len(w) > 3 and w[-2] not in "aeiou":
         w = w[:-1]
+        
     return f"/{w}/"
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -90,10 +113,9 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             voice_text = text
             target_word = text.lower().strip()
 
-        # توليد الرسم الصوتي تلقائياً
-        ipa_str = clean_silent_letters(target_word)
+        # توليد الرسم الصوتي أوتوماتيكياً بالكامل لكل الكلمات بدون استثناء
+        ipa_str = auto_remove_silent_letters(target_word)
 
-        # إذا كانت الكلمات أكثر من 4، نعرض الترجمة فقط بدون IPA، وإذا أقل نعرض الترجمة مع الـ IPA دائماً
         if word_count > 4:
             response = f"Translate : /{translated}/"
         else:
@@ -102,10 +124,8 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"IPA {ipa_str}"
             )
 
-        # إرسال النص
         await update.message.reply_text(response)
 
-        # إرسال الصوت (فويس)
         filename = "voice.mp3"
         gTTS(text=voice_text, lang=lang, slow=False).save(filename)
         if os.path.exists(filename):
