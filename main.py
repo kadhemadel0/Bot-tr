@@ -7,6 +7,7 @@ from flask import Flask
 import threading
 import time
 from deep_translator import GoogleTranslator
+from g2p_en import G2p
 
 # --- إعدادات سيرفر الـ Flask لإبقاء البوت شغال على Render ---
 app_flask = Flask('')
@@ -27,27 +28,8 @@ TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
 
-# قاموس صوتي شامل ودقيق (يتضمن الكلمات التي تحتوي على حروف صامتة مثل wednesday وغيرها)
-IPA_DICTIONARY = {
-    "certificate": "/sərˈtɪfɪkət/",
-    "student": "/ˈstjuːdənt/",
-    "students": "/ˈstjuːdənts/",
-    "translation": "/trænzˈleɪʃən/",
-    "translate": "/trænzˈleɪt/",
-    "wednesday": "/ˈwɛnzdeɪ/",     # حذف حرف الـ d الصامت بدقة
-    "knife": "/naɪf/",           # حذف حرف الـ k
-    "knight": "/naɪt/",         # حذف k و gh
-    "write": "/raɪt/",          # حذف w
-    "comb": "/koʊm/",           # حذف b
-    "island": "/ˈaɪlənd/",      # حذف s
-    "honest": "/ˈɒnɪst/",       # حذف h
-    "hour": "/ˈaʊər/",          # حذف h
-    "debt": "/dɛt/",            # حذف b
-    "doubt": "/daʊt/",          # حذف b
-    "castle": "/ˈkɑːsl/",       # حذف t
-    "listen": "/ˈlɪsən/",       # حذف t
-    "handsome": "/ˈhænsəm/",    # حذف d
-}
+# تهيئة مكتبة التحويل الصوتي لتحليل كل كلمات اللغة أوتوماتيكياً
+g2p = G2p()
 
 def load_users():
     if os.path.exists(USERS_FILE):
@@ -74,7 +56,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     words_list = text.split()
     word_count = len(words_list)
-    lower_text = text.lower()
     user_id = update.effective_user.id
 
     if user_id not in bot_users:
@@ -99,8 +80,14 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             voice_text = text
             target_word = text.lower().strip()
 
-        # جلب الـ IPA من القاموس، وإذا لمשكن موجوداً يتم توليد تنسيق نظيف
-        ipa_str = IPA_DICTIONARY.get(target_word, f"/{target_word}/")
+        # توليد الرسم الصوتي الحقيقي لكل كلمات اللغة أوتوماتيكياً عبر المكتبة (بدون إدخال يدوي وبدون حروف صامتة)
+        phonemes = g2p(target_word)
+        clean_ipa = " ".join([p for p in phonemes if p.strip()])
+        
+        if clean_ipa:
+            ipa_str = f"/{clean_ipa}/"
+        else:
+            ipa_str = f"/{target_word}/"
 
         # إذا كانت الكلمات أكثر من 4، نعرض الترجمة فقط بدون IPA
         if word_count > 4:
