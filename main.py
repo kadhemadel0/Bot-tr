@@ -116,10 +116,10 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # إذا كانت الكلمات أكثر من 4، نعرض الترجمة فقط بدون IPA
         if word_count > 4:
-            response = f"Translate : /{translated}/"
+            response = f"Translation : /{translated}/"
         else:
             response = (
-                f"translation : /{translated}/\n"
+                f"Translate : /{translated}/\n"
                 f"IPA {ipa_str}"
             )
 
