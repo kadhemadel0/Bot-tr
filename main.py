@@ -73,7 +73,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"Error sending admin notification: {e}")
 
-    await update.message.reply_text(f"أهلاً بك في بوت الترجمة السريع! 🚀\nأرسل أي كلمة أو جملة وسأقوم بترجمتها لك.\nللنطق اكتب: انطقي [الكلمة]\nللصوتي الصوتي: اعطيني IPA [الكلمة]")
+    await update.message.reply_text(f"أهلاً بك في بوت الترجمة! 🚀\n- أرسل أي كلمة لترجمتها.\n- للنطق اكتب: انطقي [الكلمة]\n- للـ IPA اكتب: اعطيني IPA [الكلمة]")
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,7 +99,6 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             filename = "voice.mp3"
             try:
-                # تحديد لغة النطق حسب الحروف (عربي أو إنجليزي)
                 lang = "ar" if contains_arabic(target_word) else "en"
                 gTTS(text=target_word, lang=lang, slow=False).save(filename)
                 if os.path.exists(filename):
@@ -118,11 +117,12 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not target_word:
                 await update.message.reply_text("يرجى كتابة الكلمة المطلوبة.")
                 return
-            # تزويد المستخدم برمز تقريبي أو تنبيه جاهز للـ IPA
-            await update.message.reply_text(f"الرسم الصوتي (IPA) للكلمة ({target_word}):\n/[قريباً يتم ربطه بقاموس صوتي أو عرض النص]/")
+            
+            # إرجاع رد مرتب وخالٍ من المشاكل
+            await update.message.reply_text(f"الرسم الصوتي (IPA) للكلمة `{target_word}` غير متوفر حالياً بدون الذكاء الاصطناعي، يمكنك استخدام أمر (انطقي {target_word}) للاستماع للصوت مباشرة!")
             return
 
-        # 3. الحالة العادية: ترجمة مباشرة لأي كلمة تُرسل
+        # 3. الحالة العادية: ترجمة مباشرة
         is_ar = contains_arabic(text)
         if is_ar:
             translated = GoogleTranslator(source='ar', target='en').translate(text)
@@ -130,14 +130,14 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             translated = GoogleTranslator(source='en', target='ar').translate(text)
 
         if not translated:
-            translated = "not found"
+            translated = text # إرجاع الكلمة نفسها بدل not found إذا تعذر الترجمة
 
         response = f"الترجمة: {translated}"
         await update.message.reply_text(response)
 
     except Exception as e:
         print(f"Error occurred: {e}")
-        await update.message.reply_text("not found")
+        await update.message.reply_text(text)
 
 
 def main():
@@ -155,7 +155,7 @@ def main():
                 )
             )
 
-            print("✅ Bot is running smoothly without AI core...")
+            print("✅ Bot is running smoothly...")
             app.run_polling(drop_pending_updates=True)
             
         except Exception as e:
