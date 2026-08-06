@@ -6,14 +6,13 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-
-from google import genai
 from gtts import gTTS
 import os
 import json
 from flask import Flask
 import threading
 import time
+from deep_translator import GoogleTranslator
 
 # --- إعدادات سيرفر الـ Flask لإبقاء البوت شغال على Render ---
 app_flask = Flask('')
@@ -34,10 +33,6 @@ TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
 BOT_USERNAME = "@Xkadhem"
-
-# إعداد عميل الذكاء الاصطناعي (تأكد أن مفتاح الـ API مخزن في متغيرات البيئة بـ Render باسم GEMINI_API_KEY)
-ai_client = genai.Client()
-
 
 # --- دوال حفظ وإدارة المستخدمين ---
 def load_users():
@@ -60,43 +55,6 @@ def contains_arabic(text):
     return any('\u0600' <= c <= '\u06FF' for c in text)
 
 
-# --- دالة الذكاء الاصطناعي الاحترافية للترجمة والتحليل الصوتي الدقيق ---
-def get_linguistic_analysis(text):
-    prompt = f"""
-    Analyze the following text/word: "{text}"
-    Provide the response strictly in a JSON format with three keys:
-    1. "translation": If the input is in English, provide its accurate Arabic translation. If it is in Arabic, provide its accurate English translation.
-    2. "ipa": The precise International Phonetic Alphabet (IPA) representation for the English word/translation (enclosed in slashes or clean).
-    3. "phonetic_arabic": A high-quality, professional Arabic phonetic transcription (with correct Arabic diacritics/tashkeel) showing an Iraqi/standard Arabic speaker how to pronounce the English term natively and accurately, without any English letters remaining.
-    """
-    
-    for _ in range(3):  # نظام إعادة محاولة تلقائي لمنع أي تعليق
-        try:
-            response = ai_client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt,
-            )
-            
-            # تنظيف النص واستخراج الـ JSON بدقة لتجنب أخطاء التنسيق
-            res_text = response.text.strip()
-            if "```json" in res_text:
-                res_text = res_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in res_text:
-                res_text = res_text.split("```")[1].split("```")[0].strip()
-                
-            data = json.loads(res_text)
-            return {
-                "translation": data.get("translation", "not found"),
-                "ipa": data.get("ipa", "IPA not found"),
-                "phonetic_arabic": data.get("phonetic_arabic", "غير متوفر")
-            }
-        except Exception as e:
-            print(f"AI parsing error: {e}")
-            time.sleep(0.5)
-            
-    return {"translation": "not found", "ipa": "IPA not found", "phonetic_arabic": "غير متوفر"}
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -115,7 +73,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"Error sending admin notification: {e}")
 
-    await update.message.reply_text(BOT_USERNAME)
+    await update.message.reply_text(f"أهلاً بك في بوت الترجمة السريع! 🚀\nأرسل أي كلمة أو جملة وسأقوم بترجمتها لك.\nللنطق اكتب: انطقي [الكلمة]\nللصوتي الصوتي: اعطيني IPA [الكلمة]")
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,36 +87,53 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     text = update.message.text.strip()
-    is_arabic = contains_arabic(text)
+    lower_text = text.lower()
 
     try:
-        # استدعاء التحليل اللغوي الذكي والشامل بجودة عالية جداً
-        analysis = get_linguistic_analysis(text)
-        
-        translated = analysis["translation"]
-        ipa_en = analysis["ipa"]
-        arabic_phonetic = analysis["phonetic_arabic"]
-
-        # تحديد الكلمة الإنجليزية المناسبة لقراءة الصوت (gTTS)
-        if not is_arabic:
-            voice_text = text
-        else:
-            voice_text = translated if translated != "not found" else None
-
-        response = f"الترجمة: {translated}\nIPA: /{ipa_en}/\nاللفظ العربي: {arabic_phonetic}"
-        await update.message.reply_text(response)
-
-        filename = "voice.mp3"
-        if voice_text and voice_text != "not found":
+        # 1. حالة طلب النطق (انطقي ...)
+        if lower_text.startswith("انطقي "):
+            target_word = text[6:].strip()
+            if not target_word:
+                await update.message.reply_text("يرجى كتابة الكلمة بعد كلمة انطقي.")
+                return
+            
+            filename = "voice.mp3"
             try:
-                gTTS(text=voice_text, lang="en", slow=False).save(filename)
+                # تحديد لغة النطق حسب الحروف (عربي أو إنجليزي)
+                lang = "ar" if contains_arabic(target_word) else "en"
+                gTTS(text=target_word, lang=lang, slow=False).save(filename)
                 if os.path.exists(filename):
                     with open(filename, "rb") as audio:
                         await update.message.reply_voice(audio)
                     os.remove(filename)
-            except:
+            except Exception as e:
                 if os.path.exists(filename):
                     os.remove(filename)
+                await update.message.reply_text("عذراً، حدث خطأ أثناء توليد الصوت.")
+            return
+
+        # 2. حالة طلب الـ IPA (اعطيني IPA ...)
+        if lower_text.startswith("اعطيني ipa "):
+            target_word = text[12:].strip()
+            if not target_word:
+                await update.message.reply_text("يرجى كتابة الكلمة المطلوبة.")
+                return
+            # تزويد المستخدم برمز تقريبي أو تنبيه جاهز للـ IPA
+            await update.message.reply_text(f"الرسم الصوتي (IPA) للكلمة ({target_word}):\n/[قريباً يتم ربطه بقاموس صوتي أو عرض النص]/")
+            return
+
+        # 3. الحالة العادية: ترجمة مباشرة لأي كلمة تُرسل
+        is_ar = contains_arabic(text)
+        if is_ar:
+            translated = GoogleTranslator(source='ar', target='en').translate(text)
+        else:
+            translated = GoogleTranslator(source='en', target='ar').translate(text)
+
+        if not translated:
+            translated = "not found"
+
+        response = f"الترجمة: {translated}"
+        await update.message.reply_text(response)
 
     except Exception as e:
         print(f"Error occurred: {e}")
@@ -180,7 +155,7 @@ def main():
                 )
             )
 
-            print("✅ Bot is running smoothly with AI core...")
+            print("✅ Bot is running smoothly without AI core...")
             app.run_polling(drop_pending_updates=True)
             
         except Exception as e:
