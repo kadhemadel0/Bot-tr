@@ -27,6 +27,7 @@ def keep_alive():
 TOKEN = "8834292206:AAGIbtd57w50NPozFUQsGHKGxQ4b_BT99PY"
 ADMIN_ID = 7964624188
 USERS_FILE = "users.json"
+MERRIAM_API_KEY = "ab75abb3-8646-4406-909e-135833c13b21"
 
 def load_users():
     if os.path.exists(USERS_FILE):
@@ -46,31 +47,42 @@ bot_users = load_users()
 def contains_arabic(text):
     return any('\u0600' <= c <= '\u06FF' for c in text)
 
-# الدالة الجديدة المقترحة لجلب الـ IPA الحقيقي من قاموس الإنترنت (Dictionary API)
+# دالة جلب الـ IPA الحقيقي عبر Merriam-Webster API
 def get_ipa(word):
     w = word.lower().strip()
+
     try:
-        url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{w}"
+        url = f"https://www.dictionaryapi.com/api/v3/references/learners/json/{w}?key={MERRIAM_API_KEY}"
+
         response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            # البحث عن أول رمز صوتي (phonetic) متاح في الـ API
-            for entry in data:
-                # محاولة جلب الـ phonetic مباشرة
-                phonetic = entry.get("phonetic")
-                if phonetic:
-                    return phonetic
-                # أو البحث داخل قائمة الـ phonetics
-                phonetics = entry.get("phonetics", [])
-                for p in phonetics:
-                    text_p = p.get("text")
-                    if text_p:
-                        return text_p
+
+        if response.status_code != 200:
+            print(f"Merriam-Webster Error: {response.status_code}")
+            return f"/{w}/"
+
+        data = response.json()
+
+        if not isinstance(data, list):
+            return f"/{w}/"
+
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+
+            hwi = entry.get("hwi", {})
+            prs = hwi.get("prs", [])
+
+            for pronunciation in prs:
+                ipa = pronunciation.get("ipa")
+
+                if ipa:
+                    return f"/{ipa}/"
+
+        return f"/{w}/"
+
     except Exception as e:
-        print(f"API Error: {e}")
-    
-    # إذا لم يتم العثور على رمز بالـ API، نرجع الكلمة نفسها بشكل احتياطي
-    return f"/{w}/"
+        print(f"Merriam-Webster API Error: {e}")
+        return f"/{w}/"
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -103,11 +115,8 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             voice_text = text
             target_word = text.lower().strip()
 
-        # جلب الـ IPA الحقيقي باستخدام الدالة الجديدة عبر الإنترنت
+        # جلب الـ IPA باستخدام دالة ميريام وبستر الجديدة
         ipa_str = get_ipa(target_word)
-        # التأكد من تنسيق الـ IPA بشكل أقواس صحيحة إذا لم تكن موجودة
-        if not ipa_str.startswith("/"):
-            ipa_str = f"/{ipa_str}/"
 
         if word_count > 4:
             response = f"Translate : /{translated}/"
